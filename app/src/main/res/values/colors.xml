@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 基础颜色 -->
+    <color name="black">#FF000000</color>
+    <color name="white">#FFFFFFFF</color>
+    
+    <!-- 苹果风格主色调 -->
+    <color name="primary_blue">#007AFF</color>
+    <color name="primary_blue_dark">#0056CC</color>
+    <color name="primary_blue_light">#4DA3FF</color>
+    
+    <!-- 背景色 -->
+    <color name="background_light">#F2F2F7</color>
+    <color name="background_dark">#1C1C1E</color>
+    <color name="background_primary">#F8F9FA</color>
+    <color name="surface_light">#FFFFFF</color>
+    <color name="surface_dark">#2C2C2E</color>
+    
+    <!-- 文字颜色 -->
+    <color name="text_primary_light">#000000</color>
+    <color name="text_primary_dark">#FFFFFF</color>
+    <color name="text_primary">#1C1C1E</color>
+    <color name="text_secondary_light">#8E8E93</color>
+    <color name="text_secondary_dark">#8E8E93</color>
+    <color name="text_secondary">#6C757D</color>
+    <color name="text_tertiary_light">#C7C7CC</color>
+    <color name="text_tertiary_dark">#48484A</color>
+    
+    <!-- 分割线 -->
+    <color name="separator_light">#C6C6C8</color>
+    <color name="separator_dark">#38383A</color>
+    
+    <!-- 聊天气泡 -->
+    <color name="chat_bubble_sent">#007AFF</color>
+    <color name="chat_bubble_received">#E5E5EA</color>
+    <color name="chat_bubble_received_dark">#3A3A3C</color>
+    
+    <!-- 状态颜色 -->
+    <color name="success_green">#34C759</color>
+    <color name="error_red">#FF3B30</color>
+    <color name="error">#DC3545</color>
+    <color name="warning_orange">#FF9500</color>
+    
+    <!-- 输入框 -->
+    <color name="input_background_light">#F2F2F7</color>
+    <color name="input_background_dark">#1C1C1E</color>
+    <color name="input_border_light">#C6C6C8</color>
+    <color name="input_border_dark">#38383A</color>
+    
+    <!-- Material Design 兼容颜色 -->
+    <color name="surface_variant">#F3F2F8</color>
+    <color name="on_surface">#1C1B1F</color>
+    <color name="primary">#007AFF</color>
+    <color name="surface">#FFFFFF</color>
+    <color name="divider">#C6C6C8</color>
+    <color name="input_background">#F2F2F7</color>
+    
+</resources>
