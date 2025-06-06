@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- 开发环境：允许所有明文流量 -->
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system"/>
+            <certificates src="user"/>
+        </trust-anchors>
+    </base-config>
+    
+    <!-- 特定域名配置（可选） -->
+    <domain-config cleartextTrafficPermitted="true">
+        <!-- 允许内网IP地址 -->
+        <domain includeSubdomains="false">10.69.71.164</domain>
+        <!-- 允许开发域名 -->
+        <domain includeSubdomains="true">pf-moody-blue.pf-moody-blues-dev.inner3.beta.qunar.com</domain>
+        <!-- 允许localhost用于调试 -->
+        <domain includeSubdomains="true">localhost</domain>
+        <domain includeSubdomains="true">127.0.0.1</domain>
+        <!-- 允许内网IP段 -->
+        <domain includeSubdomains="true">192.168.0.0</domain>
+        <domain includeSubdomains="true">10.0.0.0</domain>
+    </domain-config>
+</network-security-config>

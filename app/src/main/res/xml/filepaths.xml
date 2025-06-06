@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- 图片存储路径 -->
+    <external-path
+        name="images"
+        path="Pictures/barrierfree/" />
+</paths>

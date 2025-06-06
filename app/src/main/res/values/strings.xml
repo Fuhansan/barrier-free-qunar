@@ -1,0 +1,68 @@
+<resources>
+
+
+    <string name="app_name">聊天助手</string>
+    
+    <!-- 登录界面 -->
+    <string name="login_title">登录</string>
+    <string name="phone_hint">请输入手机号</string>
+    <string name="password_hint">请输入密码</string>
+    <string name="login_button">登录</string>
+    <string name="register_button">注册</string>
+    <string name="forgot_password">忘记密码？</string>
+    
+    <!-- 注册界面 -->
+    <string name="register_title">注册</string>
+    <string name="confirm_password_hint">确认密码</string>
+    <string name="register_submit">注册</string>
+    <string name="already_have_account">已有账号？立即登录</string>
+    <string name="no_account">没有账号？立即注册</string>
+    
+    <!-- 个人信息界面 -->
+    <string name="profile_title">个人信息</string>
+    <string name="name_label">姓名</string>
+    <string name="id_card_label">身份证号</string>
+    <string name="phone_label">手机号</string>
+    <string name="email_label">邮箱</string>
+    <string name="change_password">修改密码</string>
+    <string name="logout">退出登录</string>
+    <string name="save">保存</string>
+    <string name="edit">编辑</string>
+    
+    <!-- 聊天界面 -->
+    <string name="chat_title">聊天</string>
+    <string name="type_a_message">输入消息...</string>
+    <string name="send_message">发送</string>
+    <string name="today">今天</string>
+    <string name="yesterday">昨天</string>
+    
+    <!-- 通用 -->
+    <string name="confirm">确认</string>
+    <string name="cancel">取消</string>
+    <string name="ok">确定</string>
+    <string name="error">错误</string>
+    <string name="success">成功</string>
+    <string name="loading">加载中...</string>
+    
+    <!-- 错误信息 -->
+    <string name="phone_empty">请输入手机号</string>
+    <string name="phone_invalid">手机号格式不正确</string>
+    <string name="password_empty">请输入密码</string>
+    <string name="password_too_short">密码至少6位</string>
+    <string name="password_not_match">两次密码不一致</string>
+    <string name="login_failed">登录失败</string>
+    <string name="register_failed">注册失败</string>
+    <string name="network_error">网络错误，请重试</string>
+    <string name="server_error">服务器错误</string>
+    
+    <!-- 无障碍服务 -->
+    <string name="accessibility_service_label">无障碍服务</string>
+    <string name="accessibility_service_description">提供无障碍辅助功能，帮助用户更好地使用应用</string>
+    <string name="mSendBtnDesc">发送按钮</string>
+
+    <string name="log_title">日志</string>
+    <string name="clear_log">清空日志</string>
+    <string name="export_log">导出日志</string>
+    <string name="log_placeholder">暂无日志内容...</string>
+
+</resources>
