@@ -200,18 +200,21 @@ public class StreamingMessageSender extends MessageSender {
         }
         
         // 多媒体信息
-        extras.put(BroadcastConst.Extra.MESSAGE_TYPE, "multimedia");
-        extras.put("multimedia_type", multimediaData.getType().name());
+        extras.put(BroadcastConst.Extra.MESSAGE_TYPE, BroadcastConst.MessageType.MULTIMEDIA);
+        extras.put(BroadcastConst.Extra.MULTIMEDIA_TYPE, multimediaData.getType().name());
         
         if (multimediaData.getAudioData() != null) {
-            extras.put("audio_data", multimediaData.getAudioData());
+            extras.put(BroadcastConst.Extra.AUDIO_DATA, multimediaData.getAudioData());
         }
         if (multimediaData.getVideoData() != null) {
-            extras.put("video_data", multimediaData.getVideoData());
+            extras.put(BroadcastConst.Extra.VIDEO_DATA, multimediaData.getVideoData());
         }
         if (multimediaData.getImageData() != null) {
-            extras.put("image_data", multimediaData.getImageData());
+            extras.put(BroadcastConst.Extra.IMAGE_DATA, multimediaData.getImageData());
         }
+        
+        // 设置多媒体数据的JSON字符串（如果需要）
+        extras.put(BroadcastConst.Extra.MULTIMEDIA_DATA, multimediaData.toString());
         
         extras.put("is_streaming", true);
         

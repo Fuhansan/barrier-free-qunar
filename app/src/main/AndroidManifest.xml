@@ -81,6 +81,11 @@
             android:name=".ChatHistoryActivity"
             android:exported="false"
             android:theme="@style/Theme.Barrierfreequnar" />
+            
+        <activity
+            android:name=".MarkdownTestActivity"
+            android:exported="false"
+            android:theme="@style/Theme.Barrierfreequnar" />
 
 
         <service android:name=".java.GlobalAccessibilityService"

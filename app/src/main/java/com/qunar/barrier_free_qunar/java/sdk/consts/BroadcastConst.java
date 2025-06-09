@@ -57,8 +57,23 @@ public class BroadcastConst {
         /** 错误信息 */
         public static final String ERROR_MESSAGE = "error_message";
 
-
+        /** 会话ID */
         public static final String CONVERSATION_ID = "conversation_id";
+        
+        /** 图片数据 */
+        public static final String IMAGE_DATA = "image_data";
+        
+        /** 视频数据 */
+        public static final String VIDEO_DATA = "video_data";
+        
+        /** 语音数据 */
+        public static final String AUDIO_DATA = "audio_data";
+        
+        /** 多媒体类型 */
+        public static final String MULTIMEDIA_TYPE = "multimedia_type";
+        
+        /** 多媒体数据 */
+        public static final String MULTIMEDIA_DATA = "multimedia_data";
     }
     
     /**
@@ -82,6 +97,18 @@ public class BroadcastConst {
         
         /** AI响应完成消息 */
         public static final String AI_RESPONSE_COMPLETE = "ai_response_complete";
+        
+        /** 图片消息 */
+        public static final String IMAGE = "image";
+        
+        /** 视频消息 */
+        public static final String VIDEO = "video";
+        
+        /** 语音消息 */
+        public static final String AUDIO = "audio";
+        
+        /** 多媒体混合消息 */
+        public static final String MULTIMEDIA = "multimedia";
     }
     
     /**

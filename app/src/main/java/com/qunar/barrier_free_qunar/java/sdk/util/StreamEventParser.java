@@ -144,6 +144,7 @@ public class StreamEventParser {
                 
                 // 如果是需要广播的代理类型，切换状态
                 if (currentAgentType == StreamEventData.AgentType.INSTRUCT_EXTRACTOR ||
+                        currentAgentType == StreamEventData.AgentType.OPERATOR ||
                     currentAgentType == StreamEventData.AgentType.PLANNER) {
                     currentState = ParseState.READY_TO_BROADCAST;
                     eventData.setShouldStartBroadcast(true);

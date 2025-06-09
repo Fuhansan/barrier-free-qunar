@@ -61,8 +61,16 @@ public abstract class BaseBroadcastReceiver extends BroadcastReceiver {
         String conversationId = intent.getStringExtra(BroadcastConst.Extra.CONVERSATION_ID);
         long timestamp = intent.getLongExtra(BroadcastConst.Extra.TIMESTAMP, System.currentTimeMillis());
         
+        // 解析多媒体字段
+        String imageData = intent.getStringExtra(BroadcastConst.Extra.IMAGE_DATA);
+        String videoData = intent.getStringExtra(BroadcastConst.Extra.VIDEO_DATA);
+        String audioData = intent.getStringExtra(BroadcastConst.Extra.AUDIO_DATA);
+        String multimediaType = intent.getStringExtra(BroadcastConst.Extra.MULTIMEDIA_TYPE);
+        String multimediaData = intent.getStringExtra(BroadcastConst.Extra.MULTIMEDIA_DATA);
+        
         MessageData messageData = new MessageData(
-            originalMessage, reply, senderName, senderId, messageType, sessionId, conversationId, timestamp
+            originalMessage, reply, senderName, senderId, messageType, sessionId, conversationId, timestamp,
+            imageData, videoData, audioData, multimediaType, multimediaData
         );
         
         onMessageReceived(context, messageData);
@@ -174,8 +182,22 @@ public abstract class BaseBroadcastReceiver extends BroadcastReceiver {
         public final String conversationId;
         public final long timestamp;
         
+        // 多媒体字段
+        public final String imageData;
+        public final String videoData;
+        public final String audioData;
+        public final String multimediaType;
+        public final String multimediaData;
+        
         public MessageData(String originalMessage, String reply, String senderName, 
                           String senderId, String messageType, String sessionId, String conversationId, long timestamp) {
+            this(originalMessage, reply, senderName, senderId, messageType, sessionId, conversationId, timestamp,
+                 null, null, null, null, null);
+        }
+        
+        public MessageData(String originalMessage, String reply, String senderName, 
+                          String senderId, String messageType, String sessionId, String conversationId, long timestamp,
+                          String imageData, String videoData, String audioData, String multimediaType, String multimediaData) {
             this.originalMessage = originalMessage;
             this.reply = reply;
             this.senderName = senderName;
@@ -184,6 +206,11 @@ public abstract class BaseBroadcastReceiver extends BroadcastReceiver {
             this.sessionId = sessionId;
             this.conversationId = conversationId;
             this.timestamp = timestamp;
+            this.imageData = imageData;
+            this.videoData = videoData;
+            this.audioData = audioData;
+            this.multimediaType = multimediaType;
+            this.multimediaData = multimediaData;
         }
         
         public boolean isStreamChunk() {
@@ -200,6 +227,26 @@ public abstract class BaseBroadcastReceiver extends BroadcastReceiver {
         
         public boolean isTextMessage() {
             return BroadcastConst.MessageType.TEXT.equals(messageType);
+        }
+        
+        public boolean isImageMessage() {
+            return BroadcastConst.MessageType.IMAGE.equals(messageType);
+        }
+        
+        public boolean isVideoMessage() {
+            return BroadcastConst.MessageType.VIDEO.equals(messageType);
+        }
+        
+        public boolean isAudioMessage() {
+            return BroadcastConst.MessageType.AUDIO.equals(messageType);
+        }
+        
+        public boolean isMultimediaMessage() {
+            return BroadcastConst.MessageType.MULTIMEDIA.equals(messageType);
+        }
+        
+        public boolean hasMultimediaContent() {
+            return imageData != null || videoData != null || audioData != null || multimediaData != null;
         }
     }
     

@@ -62,6 +62,18 @@
             android:paddingHorizontal="16dp"
             android:paddingVertical="12dp">
 
+            <!-- 图片显示 -->
+            <ImageView
+                android:id="@+id/iv_multimedia"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="8dp"
+                android:maxWidth="200dp"
+                android:maxHeight="200dp"
+                android:adjustViewBounds="true"
+                android:scaleType="centerCrop"
+                android:visibility="gone" />
+
             <TextView
                 android:id="@+id/tv_message"
                 android:layout_width="wrap_content"

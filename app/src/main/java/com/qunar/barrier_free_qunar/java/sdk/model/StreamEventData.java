@@ -28,7 +28,7 @@ public class StreamEventData {
         COORDINATOR,        // 协调器
         PLANNER,           // 规划器
         INSTRUCT_EXTRACTOR, // 指令提取器（需要广播）
-        OPERATOR,          // 操作器（不需要广播）
+        OPERATOR,          // 操作器（需要广播并且执行操作）
         OTHER              // 其他类型
     }
     

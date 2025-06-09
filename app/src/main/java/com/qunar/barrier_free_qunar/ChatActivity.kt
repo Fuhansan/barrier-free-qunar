@@ -31,6 +31,7 @@ class ChatActivity : AppCompatActivity() {
 
     private lateinit var btnLog: ImageButton
     private lateinit var btnProfile: ImageButton
+    private lateinit var btnMarkdownTest: ImageButton
     private lateinit var tvTitle: TextView
     private lateinit var tvAccessibilityStatus: TextView
     private lateinit var rvMessages: RecyclerView
@@ -87,19 +88,27 @@ class ChatActivity : AppCompatActivity() {
             // 创建聊天广播接收器
             chatBroadcastReceiver = ChatBroadcastReceiver(object : ChatBroadcastReceiver.ChatBroadcastListener {
                 override fun onMessageReceived(messageData: BaseBroadcastReceiver.MessageData) {
-                    // 检查消息是否为空
-                    if (!messageData.reply.isNullOrEmpty()) {
+                    // 添加详细的调试日志
+                    Log.d("【ChatActivity】广播", "接收到消息: 类型=${messageData.messageType}, 发送者=${messageData.senderName}, 内容=${messageData.reply}")
+                    Log.d("【ChatActivity】广播", "多媒体数据: 图片=${messageData.imageData}, 视频=${messageData.videoData}, 音频=${messageData.audioData}, 类型=${messageData.multimediaType},multimediaData=${messageData.multimediaData}")
+                    
+                    // 检查消息是否为空或者是多媒体消息
+                    if (!messageData.reply.isNullOrEmpty() || messageData.hasMultimediaContent()) {
                         removeThinkingMessage()
                         // 在主线程中更新UI
                         runOnUiThread {
                             displayMessage(
                                 messageData.originalMessage ?: "",
-                                messageData.reply,
+                                messageData.reply ?: "",
                                 messageData.senderName ?: "未知",
                                 messageData.senderId ?: "unknown",
                                 messageData.timestamp,
                                 messageData.conversationId ?: "",
-                                messageData.messageType ?: BroadcastConst.MessageType.TEXT
+                                messageData.messageType ?: BroadcastConst.MessageType.TEXT,
+                                messageData.imageData,
+                                messageData.videoData,
+                                messageData.audioData,
+                                messageData.multimediaType
                             )
                         }
                     } else {
@@ -190,6 +199,7 @@ class ChatActivity : AppCompatActivity() {
 
             btnLog = findViewById(R.id.btn_log)
             btnProfile = findViewById(R.id.btn_profile)
+            btnMarkdownTest = findViewById(R.id.btn_markdown_test)
             tvTitle = findViewById(R.id.tv_title)
             tvAccessibilityStatus = findViewById(R.id.tv_accessibility_status)
             rvMessages = findViewById(R.id.rv_messages)
@@ -239,6 +249,17 @@ class ChatActivity : AppCompatActivity() {
             btnSend.setOnClickListener {
                Log.d("ChatActivity", "发送按钮被点击")
                 sendMessage()
+            }
+            
+            btnMarkdownTest.setOnClickListener {
+                android.widget.Toast.makeText(this, "打开Markdown测试", android.widget.Toast.LENGTH_SHORT).show()
+                try {
+                    val intent = Intent(this, MarkdownTestActivity::class.java)
+                    startActivity(intent)
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                    android.widget.Toast.makeText(this, "无法打开Markdown测试页面: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
+                }
             }
 
 
@@ -335,7 +356,19 @@ class ChatActivity : AppCompatActivity() {
     /**
      * 显示接收到的消息
      */
-    private fun displayMessage(originalMessage: String, reply: String, senderName: String, senderId: String, timestamp: Long, conversationId: String, messageType: String) {
+    private fun displayMessage(
+        originalMessage: String, 
+        reply: String, 
+        senderName: String, 
+        senderId: String, 
+        timestamp: Long, 
+        conversationId: String, 
+        messageType: String,
+        imageData: String? = null,
+        videoData: String? = null,
+        audioData: String? = null,
+        multimediaType: String? = null
+    ) {
         try {
             // 根据消息类型处理不同的显示逻辑
             when (messageType) {
@@ -376,6 +409,34 @@ class ChatActivity : AppCompatActivity() {
                         )
                         chatAdapter.addMessage(systemMessage)
                     }
+                }
+                BroadcastConst.MessageType.IMAGE,
+                BroadcastConst.MessageType.VIDEO,
+                BroadcastConst.MessageType.AUDIO,
+                BroadcastConst.MessageType.MULTIMEDIA -> {
+                    // 多媒体消息处理
+                    Log.d("【ChatActivity】多媒体", "开始处理多媒体消息: 类型=$messageType")
+                    Log.d("【ChatActivity】多媒体", "图片数据: $imageData")
+                    Log.d("【ChatActivity】多媒体", "视频数据: $videoData")
+                    Log.d("【ChatActivity】多媒体", "音频数据: $audioData")
+                    Log.d("【ChatActivity】多媒体", "多媒体类型: $multimediaType")
+                    
+                    val multimediaMessage = Message.createMultimediaMessage(
+                        content = reply,
+                        senderName = senderName,
+                        senderId = senderId,
+                        isSentByMe = false,
+                        imageData = imageData,
+                        videoData = videoData,
+                        audioData = audioData,
+                        multimediaType = multimediaType,
+                        messageType = messageType
+                    )
+                    
+                    Log.d("【ChatActivity】多媒体", "创建的消息对象: id=${multimediaMessage.id}, hasImage=${multimediaMessage.isImageMessage()}, imageData=${multimediaMessage.imageData}")
+                    
+                    chatAdapter.addMessage(multimediaMessage)
+                    Log.d("【ChatActivity】多媒体", "多媒体消息已添加到适配器")
                 }
             }
             

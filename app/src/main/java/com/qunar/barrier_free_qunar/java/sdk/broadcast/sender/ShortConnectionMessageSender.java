@@ -165,8 +165,8 @@ public class ShortConnectionMessageSender extends MessageSender {
         }
         
         // 多媒体信息
-        extras.put(BroadcastConst.Extra.MESSAGE_TYPE, "multimedia");
-        extras.put("multimedia_type", multimediaData.getType().name());
+        extras.put(BroadcastConst.Extra.MESSAGE_TYPE, BroadcastConst.MessageType.MULTIMEDIA);
+        extras.put(BroadcastConst.Extra.MULTIMEDIA_TYPE, multimediaData.getType().name());
         extras.put("is_streaming", false);
         
         // 文字内容
@@ -176,18 +176,28 @@ public class ShortConnectionMessageSender extends MessageSender {
         }
         
         // 多媒体数据
+        Log.d(TAG, "多媒体数据检查: 图片=" + multimediaData.getImageData() + ", 视频=" + multimediaData.getVideoData() + ", 音频=" + multimediaData.getAudioData());
+        
         if (multimediaData.getAudioData() != null) {
-            extras.put("audio_data", multimediaData.getAudioData());
+            extras.put(BroadcastConst.Extra.AUDIO_DATA, multimediaData.getAudioData());
             extras.put("has_audio", true);
+            Log.d(TAG, "添加音频数据到广播");
         }
         if (multimediaData.getVideoData() != null) {
-            extras.put("video_data", multimediaData.getVideoData());
+            extras.put(BroadcastConst.Extra.VIDEO_DATA, multimediaData.getVideoData());
             extras.put("has_video", true);
+            Log.d(TAG, "添加视频数据到广播");
         }
         if (multimediaData.getImageData() != null) {
-            extras.put("image_data", multimediaData.getImageData());
+            extras.put(BroadcastConst.Extra.IMAGE_DATA, multimediaData.getImageData());
             extras.put("has_image", true);
+            Log.d(TAG, "添加图片数据到广播: " + multimediaData.getImageData());
+        } else {
+            Log.w(TAG, "图片数据为空，无法添加到广播");
         }
+        
+        // 设置多媒体数据的JSON字符串（如果需要）
+        extras.put(BroadcastConst.Extra.MULTIMEDIA_DATA, multimediaData.toString());
         
         // 添加额外参数
         if (request.getExtraParams() != null) {

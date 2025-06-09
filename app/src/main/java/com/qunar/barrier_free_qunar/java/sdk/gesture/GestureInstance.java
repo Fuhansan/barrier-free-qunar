@@ -11,6 +11,7 @@ import android.graphics.Bitmap;
 import android.graphics.Path;
 import android.hardware.HardwareBuffer;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Environment;
 import android.os.SystemClock;
 import android.provider.MediaStore;
@@ -100,14 +101,114 @@ public class GestureInstance {
     public boolean clickGesture(Point point) {
         Path clickPoint = new Path();
         clickPoint.moveTo(point.getX(), point.getY());
-        clickPoint.lineTo(point.getY(), point.getY());
-
+        clickPoint.lineTo(point.getX(), point.getY()); // 修复坐标错误
+        Log.d("点击坐标", "x=" + point.getX() + ",y=" + point.getY());
+        
+        // 显示点击位置的视觉反馈
+       showClickFeedback(point);
+        
         GestureDescription.StrokeDescription strokeDescription = new GestureDescription.StrokeDescription(
                 clickPoint,
                 0,  // 起始时间
                 1 // 持续时间
         );
         return executeGesture(strokeDescription);
+    }
+    
+    /**
+     * 显示点击位置的视觉反馈
+     * @param point 点击的坐标点
+     */
+    private void showClickFeedback(Point point) {
+        android.os.Handler handler = new android.os.Handler(android.os.Looper.getMainLooper());
+        handler.post(() -> {
+            try {
+                // 创建点击指示器视图
+                android.widget.FrameLayout clickIndicator = new android.widget.FrameLayout(service);
+                
+                // 创建外圆（白色边框）
+                android.view.View outerCircle = new android.view.View(service);
+                android.graphics.drawable.GradientDrawable outerDrawable = new android.graphics.drawable.GradientDrawable();
+                outerDrawable.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+                outerDrawable.setColor(0x00000000); // 透明填充
+                outerDrawable.setStroke(8, 0xFFFFFFFF); // 白色边框
+                outerCircle.setBackground(outerDrawable);
+                
+                // 创建内圆（红色填充）
+                android.view.View innerCircle = new android.view.View(service);
+                android.graphics.drawable.GradientDrawable innerDrawable = new android.graphics.drawable.GradientDrawable();
+                innerDrawable.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+                innerDrawable.setColor(0xFFFF4444); // 红色填充
+                innerCircle.setBackground(innerDrawable);
+                
+                // 设置布局参数
+                int outerSize = 120; // 外圆直径
+                int innerSize = 60;  // 内圆直径
+                
+                android.widget.FrameLayout.LayoutParams outerParams = new android.widget.FrameLayout.LayoutParams(
+                    outerSize, outerSize);
+                outerParams.gravity = android.view.Gravity.CENTER;
+                
+                android.widget.FrameLayout.LayoutParams innerParams = new android.widget.FrameLayout.LayoutParams(
+                    innerSize, innerSize);
+                innerParams.gravity = android.view.Gravity.CENTER;
+                
+                clickIndicator.addView(outerCircle, outerParams);
+                clickIndicator.addView(innerCircle, innerParams);
+                
+                // 设置悬浮窗参数
+                android.view.WindowManager windowManager = (android.view.WindowManager) service.getSystemService(android.content.Context.WINDOW_SERVICE);
+                android.view.WindowManager.LayoutParams params = new android.view.WindowManager.LayoutParams(
+                    outerSize,
+                    outerSize,
+                    android.view.WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+                    android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | 
+                    android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+                    android.graphics.PixelFormat.TRANSLUCENT
+                );
+                
+                // 设置位置（以点击点为中心）
+                params.gravity = android.view.Gravity.TOP | android.view.Gravity.LEFT;
+                params.x = (int) (point.getX() - (float) outerSize / 2);
+                params.y = (int) (point.getY() - (float) outerSize / 2);
+                
+                // 添加到窗口
+                windowManager.addView(clickIndicator, params);
+                
+                // 添加动画效果
+                android.view.animation.ScaleAnimation scaleAnimation = new android.view.animation.ScaleAnimation(
+                    0.0f, 1.0f, 0.0f, 1.0f,
+                    android.view.animation.Animation.RELATIVE_TO_SELF, 0.5f,
+                    android.view.animation.Animation.RELATIVE_TO_SELF, 0.5f
+                );
+                scaleAnimation.setDuration(200);
+                scaleAnimation.setInterpolator(new android.view.animation.OvershootInterpolator());
+                
+                android.view.animation.AlphaAnimation alphaAnimation = new android.view.animation.AlphaAnimation(1.0f, 0.0f);
+                alphaAnimation.setDuration(800);
+                alphaAnimation.setStartOffset(200);
+                
+                android.view.animation.AnimationSet animationSet = new android.view.animation.AnimationSet(false);
+                animationSet.addAnimation(scaleAnimation);
+                animationSet.addAnimation(alphaAnimation);
+                
+                clickIndicator.startAnimation(animationSet);
+                
+                // 1秒后自动移除
+                handler.postDelayed(() -> {
+                    try {
+                        windowManager.removeView(clickIndicator);
+                    } catch (Exception e) {
+                        Log.e("【点击反馈】", "移除点击指示器失败", e);
+                    }
+                }, 1000);
+                
+                Log.d("【点击反馈】", "显示点击位置指示器: (" + point.getX() + ", " + point.getY() + ")");
+                
+            } catch (Exception e) {
+                Log.e("【点击反馈】", "显示点击反馈失败", e);
+            }
+        });
     }
 
 
@@ -166,72 +267,75 @@ public class GestureInstance {
 
     /**
      * 执行屏幕截图并返回URL
+     *
      * @return 图片URL，如果截图失败则返回null
      */
     public String screenShotWithBase64() throws InterruptedException {
         final CountDownLatch latch = new CountDownLatch(1);
         AtomicReference<String> resultUrl = new AtomicReference<>(); // 使用数组来存储结果，因为内部类需要final变量
-        service.takeScreenshot(0, executorService, new AccessibilityService.TakeScreenshotCallback() {
-            @Override
-            public void onSuccess(@NonNull AccessibilityService.ScreenshotResult screenshot) {
-                try {
-                    HardwareBuffer hardwareBuffer = screenshot.getHardwareBuffer();
-                    Bitmap bitmap = Bitmap.wrapHardwareBuffer(hardwareBuffer, screenshot.getColorSpace());
-                    // 保存图片到相册
-                    Uri uri = saveImageInQ(bitmap, service);
-                    Log.d("【无障碍服务】截图", "截图成功：" + uri);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            service.takeScreenshot(0, executorService, new AccessibilityService.TakeScreenshotCallback() {
+                @Override
+                public void onSuccess(@NonNull AccessibilityService.ScreenshotResult screenshot) {
+                    try {
+                        HardwareBuffer hardwareBuffer = screenshot.getHardwareBuffer();
+                        Bitmap bitmap = Bitmap.wrapHardwareBuffer(hardwareBuffer, screenshot.getColorSpace());
+                        // 保存图片到相册
+                        Uri uri = saveImageInQ(bitmap, service);
+                        Log.d("【无障碍服务】截图", "截图成功：" + uri);
 
-                    // 这里把图片转换成File
-                    File imageFile = bitmapToFile(bitmap, service);
-                    if (imageFile != null) {
-                        // 调用http接口上传图片文件（使用multipart/form-data格式）
-                        HttpResult response = BFHttpUtils.postFile(URLConst.BF_UPLOAD_FILE, imageFile, null);
+                        // 这里把图片转换成File
+                        File imageFile = bitmapToFile(bitmap, service);
+                        if (imageFile != null) {
+                            // 调用http接口上传图片文件（使用multipart/form-data格式）
+                            HttpResult response = BFHttpUtils.postFile(URLConst.BF_UPLOAD_FILE, imageFile, null);
 
-                        if (response.isSuccess()) {
-                            Object obj = response.getData();
+                            if (response.isSuccess()) {
+                                Object obj = response.getData();
 
-                            if (obj != null) {
-                                HttpResult httpResult = gson.fromJson(obj.toString(), HttpResult.class);
-                                Object data = httpResult.getData();
-                                
-                                // 将LinkedTreeMap转换为OssUploadResult对象
-                                OssUploadResult ossResult = gson.fromJson(gson.toJson(data), OssUploadResult.class);
-                                String url = ossResult.getUrl();
-                                Log.d("【无障碍服务-成功】上传", "文件URL: " + url);
-                                
-                                // 设置返回结果
-                                resultUrl.compareAndSet(resultUrl.get(), url);
+                                if (obj != null) {
+                                    HttpResult httpResult = gson.fromJson(obj.toString(), HttpResult.class);
+                                    Object data = httpResult.getData();
+
+                                    // 将LinkedTreeMap转换为OssUploadResult对象
+                                    OssUploadResult ossResult = gson.fromJson(gson.toJson(data), OssUploadResult.class);
+                                    String url = ossResult.getUrl();
+                                    Log.d("【无障碍服务-成功】上传", "文件URL: " + url);
+
+                                    // 设置返回结果
+                                    resultUrl.compareAndSet(resultUrl.get(), url);
+                                } else {
+                                    Log.e("【无障碍服务-错误】上传", "图片文件上传失败: " + response.getMsg());
+                                }
                             } else {
-                                Log.e("【无障碍服务-错误】上传", "图片文件上传失败: " + response.getMsg());
+                                Log.e("【无障碍服务-错误】上传", "上传请求失败: " + response.getMsg());
                             }
+
+                            // 上传完成后删除临时文件
+                            if (imageFile.delete()) {
+                                Log.d("【无障碍服务】清理", "临时文件已删除: " + imageFile.getAbsolutePath());
+                            }
+
+                            // 释放硬件缓冲区
+                            hardwareBuffer.close();
+                            // 在界面上显示截图
+                            showBitmap(bitmap);
                         } else {
-                            Log.e("【无障碍服务-错误】上传", "上传请求失败: " + response.getMsg());
+                            Log.e("【无障碍服务-错误】截图", "无法创建图片文件");
                         }
-
-                        // 上传完成后删除临时文件
-                        if (imageFile.delete()) {
-                            Log.d("【无障碍服务】清理", "临时文件已删除: " + imageFile.getAbsolutePath());
-                        }
-
-                        // 释放硬件缓冲区
-                        hardwareBuffer.close();
-                        // 在界面上显示截图
-                        showBitmap(bitmap);
-                    } else {
-                        Log.e("【无障碍服务-错误】截图", "无法创建图片文件");
+                    } finally {
+                        // 无论成功还是失败，都要释放CountDownLatch
+                        latch.countDown();
                     }
-                } finally {
-                    // 无论成功还是失败，都要释放CountDownLatch
+                }
+
+                @Override
+                public void onFailure(int errorCode) {
+                    Log.e("【无障碍服务-错误】截图", "截图失败，错误码：" + errorCode);
                     latch.countDown();
                 }
-            }
-
-            @Override
-            public void onFailure(int errorCode) {
-                Log.e("【无障碍服务-错误】截图", "截图失败，错误码：" + errorCode);
-                latch.countDown();
-            }
-        });
+            });
+        }
 
         latch.await(5, TimeUnit.SECONDS);
 

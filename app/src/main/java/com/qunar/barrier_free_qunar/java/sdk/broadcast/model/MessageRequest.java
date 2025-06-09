@@ -23,7 +23,7 @@ public class MessageRequest {
     /** 原始消息（用于回复场景） */
     private String originalMessage;
     
-    /** 会话ID */
+    /** 消息ID */
     private String conversationId;
     
     /** 多媒体数据（当消息类型为多媒体时使用） */
@@ -31,6 +31,10 @@ public class MessageRequest {
     
     /** 额外参数 */
     private Map<String, Object> extraParams;
+
+    /** 会话ID，会话是多轮的包含多个消息 */
+    private String sessionId;
+
     
     // 构造函数
     public MessageRequest() {}
@@ -90,7 +94,15 @@ public class MessageRequest {
     public void setConversationId(String conversationId) {
         this.conversationId = conversationId;
     }
-    
+
+    public String getSessionId() {
+        return sessionId;
+    }
+
+    public void setSessionId(String sessionId) {
+        this.sessionId = sessionId;
+    }
+
     public MultimediaData getMultimediaData() {
         return multimediaData;
     }
@@ -215,6 +227,11 @@ public class MessageRequest {
         
         public Builder multimediaData(MultimediaData multimediaData) {
             request.setMultimediaData(multimediaData);
+            return this;
+        }
+
+        public Builder sessionId(String sessionId){
+            request.setSessionId(sessionId);
             return this;
         }
         

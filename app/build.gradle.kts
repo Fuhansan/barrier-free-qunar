@@ -56,6 +56,15 @@ dependencies {
     // 圆形头像组件
     implementation("de.hdodenhof:circleimageview:3.1.0")
     
+    // Markdown渲染支持
+    implementation("io.noties.markwon:core:4.6.2")
+    implementation("io.noties.markwon:ext-strikethrough:4.6.2")
+    implementation("io.noties.markwon:ext-tables:4.6.2")
+    implementation("io.noties.markwon:linkify:4.6.2")
+    
+    // 图片加载库
+    implementation("com.github.bumptech.glide:glide:4.16.0")
+    
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

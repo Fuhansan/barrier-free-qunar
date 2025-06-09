@@ -1,6 +1,7 @@
 package com.qunar.barrier_free_qunar
 
 import android.animation.ValueAnimator
+import android.graphics.drawable.Drawable
 import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
@@ -8,6 +9,16 @@ import android.view.ViewGroup
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
+import com.bumptech.glide.Glide
+import com.bumptech.glide.load.DataSource
+import com.bumptech.glide.load.engine.GlideException
+import com.bumptech.glide.request.RequestListener
+import com.bumptech.glide.request.target.Target
+import com.qunar.barrier_free_qunar.java.sdk.util.MarkdownUtil
+import io.noties.markwon.Markwon
+import io.noties.markwon.ext.strikethrough.StrikethroughPlugin
+import io.noties.markwon.ext.tables.TablePlugin
+import io.noties.markwon.linkify.LinkifyPlugin
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -15,6 +26,37 @@ class ChatAdapter(private val messages: MutableList<Message>) :
     RecyclerView.Adapter<RecyclerView.ViewHolder>() {
     
     private var recyclerView: RecyclerView? = null
+    
+    // Markdown渲染器
+    private var markwon: Markwon? = null
+    
+    private fun getMarkwon(): Markwon {
+        if (markwon == null && recyclerView?.context != null) {
+            markwon = Markwon.builder(recyclerView!!.context)
+                .usePlugin(StrikethroughPlugin.create())
+                .usePlugin(TablePlugin.create(recyclerView!!.context))
+                .usePlugin(LinkifyPlugin.create())
+                .build()
+        }
+        return markwon ?: throw IllegalStateException("Markwon not initialized")
+    }
+    
+    /**
+     * 智能设置文本内容，如果包含Markdown语法则使用Markwon渲染，否则直接设置文本
+     */
+    private fun setTextContent(textView: TextView, content: String) {
+        if (MarkdownUtil.containsMarkdown(content)) {
+            try {
+                getMarkwon().setMarkdown(textView, content)
+            } catch (e: Exception) {
+                // 如果Markwon渲染失败，回退到普通文本显示
+                Log.w("ChatAdapter", "Markwon渲染失败，回退到普通文本: ${e.message}")
+                textView.text = content
+            }
+        } else {
+            textView.text = content
+        }
+    }
     
     override fun onAttachedToRecyclerView(recyclerView: RecyclerView) {
         super.onAttachedToRecyclerView(recyclerView)
@@ -76,8 +118,10 @@ class ChatAdapter(private val messages: MutableList<Message>) :
     override fun getItemCount(): Int = messages.size
     
     fun addMessage(message: Message) {
+        Log.d("【ChatAdapter】添加消息", "消息类型: ${message.messageType}, 是否图片: ${message.isImageMessage()}, 图片数据: ${message.imageData}")
         messages.add(message)
         notifyItemInserted(messages.size - 1)
+        Log.d("【ChatAdapter】添加消息", "消息已添加，当前消息总数: ${messages.size}")
     }
     
     fun updateMessage(position: Int, message: Message) {
@@ -140,12 +184,43 @@ class ChatAdapter(private val messages: MutableList<Message>) :
         private val tvTime: TextView = itemView.findViewById(R.id.tv_time)
         private val tvMessage: TextView = itemView.findViewById(R.id.tv_message)
         private val ivAvatar: ImageView = itemView.findViewById(R.id.iv_avatar)
+        private val ivMultimedia: ImageView = itemView.findViewById(R.id.iv_multimedia)
         
         fun bind(message: Message) {
-            tvMessage.text = message.content
+            // 智能渲染文本内容（支持Markdown）
+            setTextContent(tvMessage, message.content)
             tvTime.text = dateFormat.format(Date(message.timestamp))
             // TODO: 加载头像
             ivAvatar.setImageResource(R.drawable.ic_person)
+            
+            // 处理多媒体内容
+            if (message.isMultimediaMessage() && !message.imageData.isNullOrEmpty()) {
+                ivMultimedia.visibility = View.VISIBLE
+                // 使用Glide加载图片
+                Glide.with(itemView.context)
+                    .load(message.imageData)
+                    .placeholder(R.drawable.ic_image_placeholder)
+                    .error(R.drawable.ic_image_error)
+                    .listener(object : RequestListener<Drawable> {
+                        override fun onLoadFailed(e: GlideException?, model: Any?, target: Target<Drawable>, isFirstResource: Boolean): Boolean {
+                            Log.e("【SentViewHolder】Glide", "图片加载失败: ${e?.message}, URL: $model")
+                            return false
+                        }
+                        override fun onResourceReady(
+                            resource: Drawable,
+                            model: Any,
+                            target: Target<Drawable>,
+                            dataSource: DataSource,
+                            isFirstResource: Boolean
+                        ): Boolean {
+                            Log.d("【SentViewHolder】Glide", "图片加载成功: URL: $model")
+                            return false
+                        }
+                    })
+                    .into(ivMultimedia)
+            } else {
+                ivMultimedia.visibility = View.GONE
+            }
         }
     }
     
@@ -154,26 +229,73 @@ class ChatAdapter(private val messages: MutableList<Message>) :
         private val tvTime: TextView = itemView.findViewById(R.id.tv_time)
         private val tvMessage: TextView = itemView.findViewById(R.id.tv_message)
         private val ivAvatar: ImageView = itemView.findViewById(R.id.iv_avatar)
+        private val ivMultimedia: ImageView = itemView.findViewById(R.id.iv_multimedia)
         
         private var currentAnimator: ValueAnimator? = null
         private var isStreamingMessage = false
         private var fullText: String = "" // 维护完整的文本内容
         
         fun bind(message: Message) {
+            Log.d("【ReceivedViewHolder】绑定", "开始绑定消息: id=${message.id}, 类型=${message.messageType}")
+            Log.d("【ReceivedViewHolder】绑定", "是否多媒体: ${message.isMultimediaMessage()}, 图片数据: ${message.imageData}")
+            
             tvSenderName.text = message.senderName
             tvTime.text = dateFormat.format(Date(message.timestamp))
             // TODO: 加载头像
             ivAvatar.setImageResource(R.drawable.ic_person)
             
-            // 直接设置文本内容，不使用动画
+            // 直接设置文本内容，不使用动画，智能渲染Markdown
             fullText = message.content
-            tvMessage.text = message.content
+            setTextContent(tvMessage, message.content)
+            
+            // 处理多媒体内容
+            if (message.isMultimediaMessage() && !message.imageData.isNullOrEmpty()) {
+                Log.d("【ReceivedViewHolder】多媒体", "显示多媒体内容，图片URL: ${message.imageData}")
+                ivMultimedia.visibility = View.VISIBLE
+                // 使用Glide加载图片
+                Glide.with(itemView.context)
+                    .load(message.imageData)
+                    .placeholder(R.drawable.ic_image_placeholder)
+                    .error(R.drawable.ic_image_error)
+                    .listener(object : RequestListener<Drawable> {
+                        override fun onLoadFailed(e: GlideException?, model: Any?, target: Target<Drawable>, isFirstResource: Boolean): Boolean {
+                            Log.e("【ReceivedViewHolder】Glide", "图片加载失败: ${e?.message}, URL: $model")
+                            return false
+                        }
+                        override fun onResourceReady(
+                            resource: Drawable,
+                            model: Any,
+                            target: Target<Drawable>,
+                            dataSource: DataSource,
+                            isFirstResource: Boolean
+                        ): Boolean {
+                            Log.d("【ReceivedViewHolder】Glide", "图片加载成功: URL: $model")
+                            return false
+                        }
+                    })
+                    .into(ivMultimedia)
+            } else {
+                Log.d("【ReceivedViewHolder】多媒体", "隐藏多媒体视图，isMultimedia=${message.isMultimediaMessage()}, hasImageData=${!message.imageData.isNullOrEmpty()}")
+                ivMultimedia.visibility = View.GONE
+            }
         }
         
         fun bindWithTypewriterEffect(message: Message, isNewContent: Boolean = false) {
             tvSenderName.text = message.senderName
             tvTime.text = dateFormat.format(Date(message.timestamp))
             ivAvatar.setImageResource(R.drawable.ic_person)
+            
+            // 处理多媒体内容
+            if (message.isMultimediaMessage() && !message.imageData.isNullOrEmpty()) {
+                ivMultimedia.visibility = View.VISIBLE
+                Glide.with(itemView.context)
+                    .load(message.imageData)
+                    .placeholder(R.drawable.ic_image_placeholder)
+                    .error(R.drawable.ic_image_error)
+                    .into(ivMultimedia)
+            } else {
+                ivMultimedia.visibility = View.GONE
+            }
             
             fullText = message.content // 更新完整文本
             if (isNewContent || message.content.isNotEmpty()) {
@@ -194,8 +316,6 @@ class ChatAdapter(private val messages: MutableList<Message>) :
                 return
             }
             
-
-            
             isStreamingMessage = true
             val duration = Math.max(fullText.length * 50L, 500L) // 每个字符50ms，最少500ms
             
@@ -209,15 +329,17 @@ class ChatAdapter(private val messages: MutableList<Message>) :
                 }
                 addListener(object : android.animation.Animator.AnimatorListener {
                     override fun onAnimationStart(animation: android.animation.Animator) {
-
+                        // 动画开始
                     }
                     override fun onAnimationEnd(animation: android.animation.Animator) {
                         isStreamingMessage = false
-                        tvMessage.text = fullText
+                        // 动画结束后智能渲染最终的文本内容（支持Markdown）
+                        setTextContent(tvMessage, fullText)
                     }
                     override fun onAnimationCancel(animation: android.animation.Animator) {
                         isStreamingMessage = false
-                        tvMessage.text = fullText
+                        // 动画取消后智能渲染最终的文本内容（支持Markdown）
+                        setTextContent(tvMessage, fullText)
                     }
                     override fun onAnimationRepeat(animation: android.animation.Animator) {}
                 })
@@ -252,13 +374,15 @@ class ChatAdapter(private val messages: MutableList<Message>) :
                 }
                 addListener(object : android.animation.Animator.AnimatorListener {
                     override fun onAnimationStart(animation: android.animation.Animator) {
-
+                        // 动画开始
                     }
                     override fun onAnimationEnd(animation: android.animation.Animator) {
-                        tvMessage.text = newFullText
+                        // 动画结束后智能渲染最终的文本内容（支持Markdown）
+                        setTextContent(tvMessage, newFullText)
                     }
                     override fun onAnimationCancel(animation: android.animation.Animator) {
-                        tvMessage.text = newFullText
+                        // 动画取消后智能渲染最终的文本内容（支持Markdown）
+                        setTextContent(tvMessage, newFullText)
                     }
                     override fun onAnimationRepeat(animation: android.animation.Animator) {}
                 })

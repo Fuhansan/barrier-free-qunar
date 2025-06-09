@@ -32,7 +32,7 @@ public class LlmUtil {
     public static class ContentItem {
         private String type;
         private String text;
-        private String image;
+        private String imageUrl;
         
         public ContentItem(String type) {
             this.type = type;
@@ -44,7 +44,7 @@ public class LlmUtil {
         }
         
         public ContentItem setImage(String url) {
-            this.image = url;
+            this.imageUrl = url;
             return this;
         }
         
@@ -54,8 +54,8 @@ public class LlmUtil {
             if (text != null) {
                 map.put("text", text);
             }
-            if (image != null) {
-                map.put("image", image);
+            if (imageUrl != null) {
+                map.put("image_url", imageUrl);
             }
             return map;
         }
