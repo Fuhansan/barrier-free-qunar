@@ -35,6 +35,35 @@ public class DefaultActionParser implements ActionParser {
         Pattern.CASE_INSENSITIVE
     );
     
+    // 专门用于解析OPEN_APP动作的参数模式
+    private static final Pattern OPEN_APP_PARAM_PATTERN = Pattern.compile(
+        "app_name\\s*=\\s*['\"]([^'\"]*)['\"]?",
+        Pattern.CASE_INSENSITIVE
+    );
+    
+    // 专门用于解析CLICK动作的参数模式
+    private static final Pattern CLICK_PARAM_PATTERN = Pattern.compile(
+        "start_box\\s*=\\s*['\"]([^'\"]*)['\"]?",
+        Pattern.CASE_INSENSITIVE
+    );
+    
+    // 专门用于解析PERFORM_SWIPE_GESTURE动作的参数模式
+    private static final Pattern SWIPE_FROM_PATTERN = Pattern.compile(
+        "from\\s*=\\s*['\"]([^'\"]*)['\"]?",
+        Pattern.CASE_INSENSITIVE
+    );
+    
+    private static final Pattern SWIPE_TO_PATTERN = Pattern.compile(
+        "to\\s*=\\s*['\"]([^'\"]*)['\"]?",
+        Pattern.CASE_INSENSITIVE
+    );
+    
+    // 专门用于解析INPUT_TEXT动作的参数模式
+    private static final Pattern INPUT_TEXT_PATTERN = Pattern.compile(
+        "text\\s*=\\s*['\"]([^'\"]*)['\"]?",
+        Pattern.CASE_INSENSITIVE
+    );
+    
     @Override
     public List<ActionCommand> parseActions(String content) {
         List<ActionCommand> commands = new ArrayList<>();
@@ -58,7 +87,7 @@ public class DefaultActionParser implements ActionParser {
             
             // 只处理已知的动作类型
             if (actionType != ActionType.UNKNOWN) {
-                Map<String, String> parameters = parseParameters(paramString);
+                Map<String, String> parameters = parseParametersForAction(actionType, paramString);
                 ActionCommand command = new ActionCommand(actionType, parameters, originalText);
                 commands.add(command);
                 
@@ -93,18 +122,131 @@ public class DefaultActionParser implements ActionParser {
     }
     
     /**
-     * 解析参数字符串
+     * 根据动作类型解析参数字符串
      * 
+     * @param actionType 动作类型
      * @param paramString 参数字符串
      * @return 参数映射
      */
-    private Map<String, String> parseParameters(String paramString) {
+    private Map<String, String> parseParametersForAction(ActionType actionType, String paramString) {
         Map<String, String> parameters = new HashMap<>();
         
         if (paramString == null || paramString.trim().isEmpty()) {
             return parameters;
         }
         
+        Log.d(TAG, "为动作类型 " + actionType + " 解析参数: " + paramString);
+        
+        switch (actionType) {
+            case OPEN_APP:
+                parseOpenAppParameters(paramString, parameters);
+                break;
+            case CLICK:
+                parseClickParameters(paramString, parameters);
+                break;
+            case PERFORM_SWIPE_GESTURE:
+                parseSwipeParameters(paramString, parameters);
+                break;
+            case type:
+                parseInputTextParameters(paramString, parameters);
+                break;
+            case BACK:
+            case HOME:
+            case COMPLETE:
+            case SCREENSHOT:
+                // 这些动作不需要参数
+                break;
+            default:
+                // 对于未知或新增的动作类型，使用通用解析
+                parseGenericParameters(paramString, parameters);
+                break;
+        }
+        
+        return parameters;
+    }
+    
+    /**
+     * 解析OPEN_APP动作的参数
+     */
+    private void parseOpenAppParameters(String paramString, Map<String, String> parameters) {
+        Matcher matcher = OPEN_APP_PARAM_PATTERN.matcher(paramString);
+        if (matcher.find()) {
+            String appName = matcher.group(1);
+            if (appName != null) {
+                parameters.put("app_name", appName.trim());
+                // 为了兼容性，同时设置packageName参数
+                parameters.put("packageName", appName.trim());
+                Log.d(TAG, "解析OPEN_APP参数: app_name = " + appName);
+            }
+        } else {
+            Log.w(TAG, "OPEN_APP动作参数解析失败: " + paramString);
+        }
+    }
+    
+    /**
+     * 解析CLICK动作的参数
+     */
+    private void parseClickParameters(String paramString, Map<String, String> parameters) {
+        Matcher matcher = CLICK_PARAM_PATTERN.matcher(paramString);
+        if (matcher.find()) {
+            String startBox = matcher.group(1);
+            if (startBox != null) {
+                parameters.put("start_box", startBox.trim());
+                Log.d(TAG, "解析CLICK参数: start_box = " + startBox);
+            }
+        } else {
+            Log.w(TAG, "CLICK动作参数解析失败: " + paramString);
+        }
+    }
+    
+    /**
+     * 解析PERFORM_SWIPE_GESTURE动作的参数
+     */
+    private void parseSwipeParameters(String paramString, Map<String, String> parameters) {
+        Matcher fromMatcher = SWIPE_FROM_PATTERN.matcher(paramString);
+        Matcher toMatcher = SWIPE_TO_PATTERN.matcher(paramString);
+        
+        if (fromMatcher.find()) {
+            String from = fromMatcher.group(1);
+            if (from != null) {
+                parameters.put("from", from.trim());
+                Log.d(TAG, "解析SWIPE参数: from = " + from);
+            }
+        }
+        
+        if (toMatcher.find()) {
+            String to = toMatcher.group(1);
+            if (to != null) {
+                parameters.put("to", to.trim());
+                Log.d(TAG, "解析SWIPE参数: to = " + to);
+            }
+        }
+        
+        if (!fromMatcher.find() && !toMatcher.find()) {
+            Log.w(TAG, "PERFORM_SWIPE_GESTURE动作参数解析失败: " + paramString);
+        }
+    }
+    
+    /**
+     * 解析INPUT_TEXT动作的参数
+     */
+    private void parseInputTextParameters(String paramString, Map<String, String> parameters) {
+        Matcher matcher = INPUT_TEXT_PATTERN.matcher(paramString);
+        if (matcher.find()) {
+            String text = matcher.group(1);
+            if (text != null) {
+                parameters.put("text", text.trim());
+                Log.d(TAG, "解析INPUT_TEXT参数: text = " + text);
+            }
+        } else {
+            Log.w(TAG, "INPUT_TEXT动作参数解析失败: " + paramString);
+        }
+    }
+    
+    /**
+     * 通用参数解析（用于未知或新增的动作类型）
+     */
+    private void parseGenericParameters(String paramString, Map<String, String> parameters) {
         Matcher paramMatcher = PARAM_PATTERN.matcher(paramString);
         
         while (paramMatcher.find()) {
@@ -113,10 +255,8 @@ public class DefaultActionParser implements ActionParser {
             
             if (key != null && value != null) {
                 parameters.put(key.trim(), value.trim());
-                Log.d(TAG, "解析参数: " + key + " = " + value);
+                Log.d(TAG, "解析通用参数: " + key + " = " + value);
             }
         }
-        
-        return parameters;
     }
 }

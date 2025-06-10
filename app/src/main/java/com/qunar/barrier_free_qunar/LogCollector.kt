@@ -83,7 +83,7 @@ class LogCollector private constructor() {
      */
     fun w(tag: String, message: String) {
         addLog("WARN", tag, message)
-        Log.w(tag, message)
+        //Log.w(tag, message)
     }
     
     /**
@@ -91,7 +91,7 @@ class LogCollector private constructor() {
      */
     fun e(tag: String, message: String) {
         addLog("ERROR", tag, message)
-        Log.e(tag, message)
+        ////Log.tag, message)
     }
     
     /**
@@ -100,7 +100,7 @@ class LogCollector private constructor() {
     fun e(tag: String, message: String, throwable: Throwable) {
         val fullMessage = "$message\n${Log.getStackTraceString(throwable)}"
         addLog("ERROR", tag, fullMessage)
-        Log.e(tag, message, throwable)
+        ////Log.tag, message, throwable)
     }
     
     /**
@@ -128,7 +128,7 @@ class LogCollector private constructor() {
                 try {
                     listener.onNewLog(logEntry)
                 } catch (e: Exception) {
-                    Log.e("LogCollector", "通知监听器失败: ${e.message}")
+                    //Log."LogCollector", "通知监听器失败: ${e.message}")
                 }
             }
         }

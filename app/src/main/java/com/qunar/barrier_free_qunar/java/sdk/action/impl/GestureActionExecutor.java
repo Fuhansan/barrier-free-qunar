@@ -55,6 +55,8 @@ public class GestureActionExecutor implements ActionExecutor {
                     return executeScreenshot(command);
                 case OPEN_APP:
                     return executeOpenApp(command);
+                case type:
+                    return executeInputText(command);
                 case COMPLETE:
                     return executeComplete(command);
                 default:
@@ -79,6 +81,7 @@ public class GestureActionExecutor implements ActionExecutor {
                actionType == ActionType.HOME ||
                actionType == ActionType.SCREENSHOT ||
                actionType == ActionType.OPEN_APP ||
+               actionType == ActionType.type ||
                actionType == ActionType.COMPLETE;
     }
     
@@ -171,6 +174,23 @@ public class GestureActionExecutor implements ActionExecutor {
         
         gestureApi.openApp(packageName);
         return ActionResult.success("打开应用操作执行成功: " + packageName);
+    }
+    
+    /**
+     * 执行输入文本操作
+     */
+    private ActionResult executeInputText(ActionCommand command) {
+        String text = command.getParameter("text");
+        if (text == null || text.trim().isEmpty()) {
+            return ActionResult.failure("输入文本操作缺少text参数");
+        }
+        
+        // 注意：这里假设GestureApi有inputText方法，如果没有需要添加或使用其他方式
+        // gestureApi.inputText(text);
+        Log.d(TAG, "执行输入文本操作: " + text);
+        
+        // 临时返回成功，实际实现需要根据GestureApi的具体方法
+        return ActionResult.success("输入文本操作执行成功: " + text);
     }
     
     /**

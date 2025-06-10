@@ -15,6 +15,12 @@ import com.qunar.barrier_free_qunar.java.sdk.util.StreamEventParser;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 /**
  * 广播发送器 - 重构后的统一消息发送入口
@@ -22,11 +28,20 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 public class BroadcastSender {
     private static final String TAG = "BroadcastSender";
+    private static final int QUEUE_CAPACITY = 1000; // 消息队列容量
+    private static final int CONSUMER_THREAD_COUNT = 2; // 消费者线程数量
+    
     private final BroadcastManager broadcastManager;
     private final StreamingMessageSender streamingSender;
     private final ShortConnectionMessageSender shortConnectionSender;
 
     private LogCollector logCollector;
+    
+    // 消息队列管理
+    private final Map<String, BlockingQueue<MessageRequest>> broadcastQueues = new ConcurrentHashMap<>();
+    private final Map<String, ExecutorService> queueConsumers = new ConcurrentHashMap<>();
+    private final Map<String, AtomicBoolean> queueActiveFlags = new ConcurrentHashMap<>();
+    private final Object queueLock = new Object();
 
 
     public BroadcastSender(Context context) {
@@ -60,6 +75,16 @@ public class BroadcastSender {
         }
 
         try {
+            // 对于流式消息，使用消息队列机制
+            if (request.getSendMode() == MessageRequest.SendMode.STREAMING && 
+                request.getConversationId() != null && !request.getConversationId().trim().isEmpty()) {
+                
+                String broadcastId = request.getConversationId();
+                
+                // 将消息放入对应的队列
+                return enqueueMessage(broadcastId, request);
+            }
+            
             // 根据发送模式选择对应的发送器
             MessageSender sender = getSenderByMode(request.getSendMode());
 
@@ -144,29 +169,46 @@ public class BroadcastSender {
                 case DELTA:
                     // 只有在广播已开始的情况下才处理delta内容
                     if (isBroadcastingStarted.get() && eventData.getContent() != null && !eventData.getContent().trim().isEmpty()) {
-                        String conversationId = eventData.getMessageId() != null ?
-                                eventData.getMessageId() : currentSessionId;
+                        String conversationId = eventData.getMessageId();
+
+                        if(conversationId == null || conversationId.isBlank()){
+                            logCollector.d(TAG, "接收到delta事件，但是messageId为空，跳过处理: " + eventData.getContent());
+                            break;
+                        }
+
+                        // 额外验证内容不为空
+                        String content = eventData.getContent().trim();
+                        if (content.isEmpty()) {
+                            logCollector.d(TAG, "接收到delta事件，但是内容为空，跳过处理: messageId=" + conversationId);
+                            break;
+                        }
 
                         MessageRequest streamRequest = new MessageRequest.Builder()
                                 .sendMode(MessageRequest.SendMode.STREAMING)
                                 .messageType(MessageRequest.MessageType.TEXT)
                                 .senderRole(MessageRequest.SenderRole.SYSTEM)
-                                .content(eventData.getContent())
+                                .content(content)
                                 .originalMessage(userMessage)
                                 .conversationId(conversationId)
                                 .build();
 
-                        result = eventData.getContent();
+                        result = content;
                         send(streamRequest);
-                        logCollector.d(TAG, "发送流式消息内容: " + eventData.getContent());
+                        logCollector.d(TAG, "发送流式消息内容: " + content + ",messageId=" + conversationId);
                     } else if (!isBroadcastingStarted.get()) {
                         logCollector.d(TAG, "广播未开始，跳过delta内容: " + eventData.getContent());
+                    } else {
+                        logCollector.d(TAG, "delta内容为空或无效，跳过处理: " + eventData.getContent());
                     }
                     break;
 
                 case END_OF_LLM:
                     logCollector.i(TAG, "LLM流程结束，停止广播模式");
                     isBroadcastingStarted.set(false);
+                    // 停止当前会话的消息队列消费
+                    if (currentSessionId != null && !currentSessionId.trim().isEmpty()) {
+                        stopQueueConsumer(currentSessionId);
+                    }
                     // 可以在这里发送流程结束的通知
                     break;
 
@@ -180,6 +222,163 @@ public class BroadcastSender {
         }
 
         return result;
+    }
+    
+    /**
+     * 将消息放入队列
+     * @param broadcastId 广播唯一标识
+     * @param request 消息请求
+     * @return 是否成功入队
+     */
+    private boolean enqueueMessage(String broadcastId, MessageRequest request) {
+        synchronized (queueLock) {
+            // 获取或创建消息队列
+            BlockingQueue<MessageRequest> queue = broadcastQueues.computeIfAbsent(
+                broadcastId, 
+                k -> new LinkedBlockingQueue<>(QUEUE_CAPACITY)
+            );
+            
+            // 启动消费者（如果还没有启动）
+            if (!queueActiveFlags.containsKey(broadcastId)) {
+                startQueueConsumer(broadcastId, queue);
+            }
+            
+            try {
+                // 非阻塞入队，如果队列满了则返回false
+                boolean success = queue.offer(request);
+                if (success) {
+                    logCollector.d(TAG, "消息已入队: " + broadcastId + ", 队列大小: " + queue.size());
+                } else {
+                    logCollector.w(TAG, "消息队列已满，丢弃消息: " + broadcastId);
+                }
+                return success;
+            } catch (Exception e) {
+                logCollector.e(TAG, "消息入队失败: " + broadcastId, e);
+                return false;
+            }
+        }
+    }
+    
+    /**
+     * 启动队列消费者
+     * @param broadcastId 广播唯一标识
+     * @param queue 消息队列
+     */
+    private void startQueueConsumer(String broadcastId, BlockingQueue<MessageRequest> queue) {
+        ExecutorService consumer = Executors.newFixedThreadPool(CONSUMER_THREAD_COUNT, r -> {
+            Thread t = new Thread(r, "BroadcastConsumer-" + broadcastId);
+            t.setDaemon(true);
+            return t;
+        });
+        
+        queueConsumers.put(broadcastId, consumer);
+        queueActiveFlags.put(broadcastId, new AtomicBoolean(true));
+        
+        // 启动消费者线程
+        for (int i = 0; i < CONSUMER_THREAD_COUNT; i++) {
+            final int consumerId = i;
+            consumer.submit(() -> {
+                logCollector.d(TAG, "启动消费者线程: " + broadcastId + "-" + consumerId);
+                
+                while (queueActiveFlags.get(broadcastId).get()) {
+                    try {
+                        // 从队列中取消息，设置超时避免无限等待
+                        MessageRequest request = queue.poll(1, TimeUnit.SECONDS);
+                        
+                        if (request != null) {
+                            // 处理消息
+                            processQueuedMessage(request, broadcastId, consumerId);
+                        }
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        logCollector.d(TAG, "消费者线程被中断: " + broadcastId + "-" + consumerId);
+                        break;
+                    } catch (Exception e) {
+                        logCollector.e(TAG, "消费者处理消息异常: " + broadcastId + "-" + consumerId, e);
+                    }
+                }
+                
+                logCollector.d(TAG, "消费者线程结束: " + broadcastId + "-" + consumerId);
+            });
+        }
+        
+        logCollector.i(TAG, "队列消费者已启动: " + broadcastId + ", 线程数: " + CONSUMER_THREAD_COUNT);
+    }
+    
+    /**
+     * 处理队列中的消息
+     * @param request 消息请求
+     * @param broadcastId 广播标识
+     * @param consumerId 消费者ID
+     */
+    private void processQueuedMessage(MessageRequest request, String broadcastId, int consumerId) {
+        try {
+            logCollector.d(TAG, "消费者 " + consumerId + " 处理消息: " + broadcastId);
+            
+            // 使用原有的发送逻辑
+            MessageSender sender = getSenderByMode(request.getSendMode());
+            boolean success = sender.send(request);
+            
+            if (success) {
+                logCollector.d(TAG, "队列消息发送成功: " + broadcastId + " by consumer-" + consumerId);
+            } else {
+                logCollector.w(TAG, "队列消息发送失败: " + broadcastId + " by consumer-" + consumerId);
+            }
+        } catch (Exception e) {
+            logCollector.e(TAG, "处理队列消息异常: " + broadcastId + " by consumer-" + consumerId, e);
+        }
+    }
+    
+    /**
+     * 停止队列消费者
+     * @param broadcastId 广播唯一标识
+     */
+    private void stopQueueConsumer(String broadcastId) {
+        synchronized (queueLock) {
+            AtomicBoolean activeFlag = queueActiveFlags.get(broadcastId);
+            if (activeFlag != null) {
+                activeFlag.set(false);
+            }
+            
+            ExecutorService consumer = queueConsumers.remove(broadcastId);
+            if (consumer != null) {
+                consumer.shutdown();
+                try {
+                    if (!consumer.awaitTermination(5, TimeUnit.SECONDS)) {
+                        consumer.shutdownNow();
+                    }
+                } catch (InterruptedException e) {
+                    consumer.shutdownNow();
+                    Thread.currentThread().interrupt();
+                }
+                logCollector.i(TAG, "队列消费者已停止: " + broadcastId);
+            }
+            
+            // 清理队列（可选，根据需求决定是否保留未处理的消息）
+            BlockingQueue<MessageRequest> queue = broadcastQueues.remove(broadcastId);
+            if (queue != null && !queue.isEmpty()) {
+                logCollector.w(TAG, "清理队列，丢弃 " + queue.size() + " 条未处理消息: " + broadcastId);
+            }
+            
+            queueActiveFlags.remove(broadcastId);
+        }
+    }
+    
+    /**
+     * 强制清理所有队列状态（用于异常情况）
+     */
+    public void clearAllQueueStates() {
+        synchronized (queueLock) {
+            // 停止所有消费者
+            for (String broadcastId : queueConsumers.keySet()) {
+                stopQueueConsumer(broadcastId);
+            }
+            
+            broadcastQueues.clear();
+            queueConsumers.clear();
+            queueActiveFlags.clear();
+            logCollector.i(TAG, "已清理所有队列状态");
+        }
     }
 
 }

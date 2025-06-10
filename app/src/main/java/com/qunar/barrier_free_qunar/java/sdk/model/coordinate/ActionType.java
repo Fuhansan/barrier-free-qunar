@@ -42,8 +42,14 @@ public enum ActionType {
      * 打开应用
      * 参数: packageName (包名)
      */
-    OPEN_APP("openApp"),
-    
+    OPEN_APP("open_app"),
+
+    /**
+     * 输入文字
+     * 参数type:("text")
+     */
+    type("inputText"),
+
     /**
      * 未知动作类型
      */

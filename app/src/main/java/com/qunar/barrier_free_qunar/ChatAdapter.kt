@@ -104,11 +104,16 @@ class ChatAdapter(private val messages: MutableList<Message>) :
         when (holder) {
             is SentMessageViewHolder -> holder.bind(message)
             is ReceivedMessageViewHolder -> {
-                // 检查是否是当前正在流式显示的消息
+                // 只有当前正在流式显示的消息且流式状态未完成时才使用打字机效果
                 val isCurrentStreamMessage = (position == getCurrentStreamMessageIndex())
-                if (isCurrentStreamMessage) {
+                val isStreamInProgress = !message.isStreamCompleted
+                
+                if (isCurrentStreamMessage && isStreamInProgress && message.content.isNotEmpty()) {
+                    // 当前流式消息、流式状态未完成且有内容时使用打字机效果
                     holder.bindWithTypewriterEffect(message, false)
                 } else {
+                    // 其他情况都直接显示完整内容，不使用动画
+                    // 包括：已完成的流式消息、非流式消息、空内容消息
                     holder.bind(message)
                 }
             }
@@ -142,25 +147,65 @@ class ChatAdapter(private val messages: MutableList<Message>) :
         }
     }
     
+    /**
+     * 根据conversationId查找消息位置
+     */
+    fun findMessageByConversationId(conversationId: String): Int {
+        return messages.indexOfLast { it.conversationId == conversationId }
+    }
+    
+    /**
+     * 根据conversationId追加内容到现有消息
+     */
+    fun appendToMessageByConversationId(conversationId: String, additionalContent: String): Boolean {
+        val position = findMessageByConversationId(conversationId)
+        if (position >= 0) {
+            appendToMessageWithEffect(position, additionalContent)
+            return true
+        }
+        return false
+    }
+
     fun appendToMessageWithEffect(position: Int, additionalContent: String) {
-        // Log.d("ChatAdapter", "appendToMessageWithEffect: position=$position, content='$additionalContent'")
-        if (position >= 0 && position < messages.size) {
+        Log.d("【ChatAdapter】流式追加", "appendToMessageWithEffect: position=$position, content='$additionalContent', 消息总数=${messages.size}")
+        
+        // 检查参数有效性
+        if (additionalContent.isEmpty()) {
+            Log.d("【ChatAdapter】流式追加", "additionalContent为空，跳过处理")
+            return
+        }
+        
+        if (position < 0 || position >= messages.size) {
+            Log.w("【ChatAdapter】流式追加", "无效的position: $position, 消息总数: ${messages.size}")
+            return
+        }
+        
+        try {
             val existingMessage = messages[position]
             val updatedMessage = existingMessage.copy(
-                content = existingMessage.content + additionalContent
+                content = existingMessage.content + additionalContent,
+                isStreamCompleted = false // 流式追加时标记为未完成
             )
             messages[position] = updatedMessage
-            // Log.d("ChatAdapter", "更新消息内容: '${existingMessage.content}' -> '${updatedMessage.content}'")
+            Log.d("【ChatAdapter】流式追加", "更新消息内容: '${existingMessage.content}' -> '${updatedMessage.content}'")
             
             // 获取对应的ViewHolder并应用打字机效果
             val viewHolder = getCurrentViewHolder(position)
-            // Log.d("ChatAdapter", "获取到的ViewHolder类型: ${viewHolder?.javaClass?.simpleName}")
+            Log.d("【ChatAdapter】流式追加", "获取到的ViewHolder类型: ${viewHolder?.javaClass?.simpleName}")
             if (viewHolder is ReceivedMessageViewHolder) {
-                // Log.d("ChatAdapter", "调用appendTextWithEffect: '$additionalContent'")
+                Log.d("【ChatAdapter】流式追加", "调用appendTextWithEffect: '$additionalContent'")
                 viewHolder.appendTextWithEffect(additionalContent)
             } else {
-                // Log.d("ChatAdapter", "ViewHolder不是ReceivedMessageViewHolder，使用notifyItemChanged")
+                Log.d("【ChatAdapter】流式追加", "ViewHolder不是ReceivedMessageViewHolder，使用notifyItemChanged")
                 notifyItemChanged(position)
+            }
+        } catch (e: Exception) {
+            Log.e("【ChatAdapter】流式追加", "处理流式追加时出错: ${e.message}", e)
+            // 发生异常时，尝试使用notifyItemChanged作为备用方案
+            try {
+                notifyItemChanged(position)
+            } catch (e2: Exception) {
+                Log.e("【ChatAdapter】流式追加", "备用方案也失败: ${e2.message}", e2)
             }
         }
     }
@@ -178,6 +223,22 @@ class ChatAdapter(private val messages: MutableList<Message>) :
     
     fun getCurrentStreamMessageIndex(): Int {
         return currentStreamMessageIndex
+    }
+    
+    /**
+     * 标记指定位置的消息流式输出完成
+     */
+    fun markStreamCompleted(position: Int) {
+        if (position >= 0 && position < messages.size) {
+            val existingMessage = messages[position]
+            val updatedMessage = existingMessage.copy(
+                isStreamCompleted = true
+            )
+            messages[position] = updatedMessage
+            Log.d("【ChatAdapter】流式完成", "标记消息流式完成: position=$position")
+            // 通知该位置的ViewHolder重新绑定，以停止动画效果
+            notifyItemChanged(position)
+        }
     }
     
     inner class SentMessageViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
@@ -235,48 +296,73 @@ class ChatAdapter(private val messages: MutableList<Message>) :
         private var isStreamingMessage = false
         private var fullText: String = "" // 维护完整的文本内容
         
+        private var lastBoundMessageId: String? = null
+        private var lastBoundImageUrl: String? = null
+        private var lastBoundContent: String? = null
+        
         fun bind(message: Message) {
-            Log.d("【ReceivedViewHolder】绑定", "开始绑定消息: id=${message.id}, 类型=${message.messageType}")
-            Log.d("【ReceivedViewHolder】绑定", "是否多媒体: ${message.isMultimediaMessage()}, 图片数据: ${message.imageData}")
+            // 优化：只在消息ID变化时输出日志，避免滑动时重复日志
+            if (lastBoundMessageId != message.id) {
+                Log.d("【ReceivedViewHolder】绑定", "绑定新消息: id=${message.id}, 类型=${message.messageType}")
+                lastBoundMessageId = message.id
+            }
             
+            // 基础信息设置（这些操作很轻量，每次都执行）
             tvSenderName.text = message.senderName
             tvTime.text = dateFormat.format(Date(message.timestamp))
-            // TODO: 加载头像
             ivAvatar.setImageResource(R.drawable.ic_person)
             
-            // 直接设置文本内容，不使用动画，智能渲染Markdown
-            fullText = message.content
-            setTextContent(tvMessage, message.content)
+            // 取消任何正在进行的动画
+            currentAnimator?.cancel()
+            isStreamingMessage = false
             
-            // 处理多媒体内容
+            // 文本内容设置 - 优化：避免滑动时重复设置相同内容
+            if (lastBoundContent != message.content) {
+                fullText = message.content
+                setTextContent(tvMessage, message.content)
+                lastBoundContent = message.content
+            }
+            
+            // 处理多媒体内容 - 优化：只在图片URL变化时重新加载
             if (message.isMultimediaMessage() && !message.imageData.isNullOrEmpty()) {
-                Log.d("【ReceivedViewHolder】多媒体", "显示多媒体内容，图片URL: ${message.imageData}")
-                ivMultimedia.visibility = View.VISIBLE
-                // 使用Glide加载图片
-                Glide.with(itemView.context)
-                    .load(message.imageData)
-                    .placeholder(R.drawable.ic_image_placeholder)
-                    .error(R.drawable.ic_image_error)
-                    .listener(object : RequestListener<Drawable> {
-                        override fun onLoadFailed(e: GlideException?, model: Any?, target: Target<Drawable>, isFirstResource: Boolean): Boolean {
-                            Log.e("【ReceivedViewHolder】Glide", "图片加载失败: ${e?.message}, URL: $model")
-                            return false
-                        }
-                        override fun onResourceReady(
-                            resource: Drawable,
-                            model: Any,
-                            target: Target<Drawable>,
-                            dataSource: DataSource,
-                            isFirstResource: Boolean
-                        ): Boolean {
-                            Log.d("【ReceivedViewHolder】Glide", "图片加载成功: URL: $model")
-                            return false
-                        }
-                    })
-                    .into(ivMultimedia)
+                if (lastBoundImageUrl != message.imageData) {
+                    Log.d("【ReceivedViewHolder】多媒体", "加载新图片: ${message.imageData}")
+                    lastBoundImageUrl = message.imageData
+                    
+                    ivMultimedia.visibility = View.VISIBLE
+                    // 使用Glide加载图片
+                    Glide.with(itemView.context)
+                        .load(message.imageData)
+                        .placeholder(R.drawable.ic_image_placeholder)
+                        .error(R.drawable.ic_image_error)
+                        .listener(object : RequestListener<Drawable> {
+                            override fun onLoadFailed(e: GlideException?, model: Any?, target: Target<Drawable>, isFirstResource: Boolean): Boolean {
+                                Log.e("【ReceivedViewHolder】Glide", "图片加载失败: ${e?.message}, URL: $model")
+                                return false
+                            }
+                            override fun onResourceReady(
+                                resource: Drawable,
+                                model: Any,
+                                target: Target<Drawable>,
+                                dataSource: DataSource,
+                                isFirstResource: Boolean
+                            ): Boolean {
+                                Log.d("【ReceivedViewHolder】Glide", "图片加载成功: URL: $model")
+                                return false
+                            }
+                        })
+                        .into(ivMultimedia)
+                } else {
+                    // 图片URL相同，只确保可见性正确
+                    ivMultimedia.visibility = View.VISIBLE
+                }
             } else {
-                Log.d("【ReceivedViewHolder】多媒体", "隐藏多媒体视图，isMultimedia=${message.isMultimediaMessage()}, hasImageData=${!message.imageData.isNullOrEmpty()}")
-                ivMultimedia.visibility = View.GONE
+                // 优化：只在需要时输出日志和改变可见性
+                if (ivMultimedia.visibility != View.GONE) {
+                    Log.d("【ReceivedViewHolder】多媒体", "隐藏多媒体视图")
+                    ivMultimedia.visibility = View.GONE
+                    lastBoundImageUrl = null
+                }
             }
         }
         
@@ -287,23 +373,36 @@ class ChatAdapter(private val messages: MutableList<Message>) :
             
             // 处理多媒体内容
             if (message.isMultimediaMessage() && !message.imageData.isNullOrEmpty()) {
-                ivMultimedia.visibility = View.VISIBLE
-                Glide.with(itemView.context)
-                    .load(message.imageData)
-                    .placeholder(R.drawable.ic_image_placeholder)
-                    .error(R.drawable.ic_image_error)
-                    .into(ivMultimedia)
+                if (lastBoundImageUrl != message.imageData) {
+                    ivMultimedia.visibility = View.VISIBLE
+                    Glide.with(itemView.context)
+                        .load(message.imageData)
+                        .placeholder(R.drawable.ic_image_placeholder)
+                        .error(R.drawable.ic_image_error)
+                        .into(ivMultimedia)
+                    lastBoundImageUrl = message.imageData
+                } else {
+                    ivMultimedia.visibility = View.VISIBLE
+                }
             } else {
-                ivMultimedia.visibility = View.GONE
+                if (ivMultimedia.visibility != View.GONE) {
+                    ivMultimedia.visibility = View.GONE
+                    lastBoundImageUrl = null
+                }
             }
             
+            // 优化：只有内容真正发生变化或者是新内容时才启动打字机效果
+            val shouldStartTypewriter = (lastBoundContent != message.content) || isNewContent
+            
             fullText = message.content // 更新完整文本
-            if (isNewContent || message.content.isNotEmpty()) {
-                // 如果是新内容或者有内容，使用打字机效果
+            lastBoundContent = message.content
+            
+            if (shouldStartTypewriter && message.content.isNotEmpty()) {
+                // 内容发生变化且有内容时使用打字机效果
                 startTypewriterEffect(message.content)
             } else {
-                // 如果没有内容，直接显示空
-                tvMessage.text = message.content
+                // 内容未变化或无内容时直接显示
+                setTextContent(tvMessage, message.content)
             }
         }
         
@@ -333,13 +432,29 @@ class ChatAdapter(private val messages: MutableList<Message>) :
                     }
                     override fun onAnimationEnd(animation: android.animation.Animator) {
                         isStreamingMessage = false
-                        // 动画结束后智能渲染最终的文本内容（支持Markdown）
-                        setTextContent(tvMessage, fullText)
+                        // 动画结束后直接设置完整文本，避免Markwon渲染产生额外的视觉效果
+                        tvMessage.text = fullText
+                        // 然后立即应用Markwon渲染（如果需要），但不会产生视觉变化
+                        if (MarkdownUtil.containsMarkdown(fullText)) {
+                            try {
+                                getMarkwon().setMarkdown(tvMessage, fullText)
+                            } catch (e: Exception) {
+                                Log.w("ChatAdapter", "Markwon渲染失败: ${e.message}")
+                            }
+                        }
                     }
                     override fun onAnimationCancel(animation: android.animation.Animator) {
                         isStreamingMessage = false
-                        // 动画取消后智能渲染最终的文本内容（支持Markdown）
-                        setTextContent(tvMessage, fullText)
+                        // 动画取消后直接设置完整文本
+                        tvMessage.text = fullText
+                        // 然后立即应用Markwon渲染（如果需要）
+                        if (MarkdownUtil.containsMarkdown(fullText)) {
+                            try {
+                                getMarkwon().setMarkdown(tvMessage, fullText)
+                            } catch (e: Exception) {
+                                Log.w("ChatAdapter", "Markwon渲染失败: ${e.message}")
+                            }
+                        }
                     }
                     override fun onAnimationRepeat(animation: android.animation.Animator) {}
                 })

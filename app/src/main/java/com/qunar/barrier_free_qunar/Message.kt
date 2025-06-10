@@ -13,7 +13,11 @@ data class Message(
     val videoData: String? = null,
     val audioData: String? = null,
     val multimediaType: String? = null,
-    val messageType: String? = null
+    val messageType: String? = null,
+    // 对话ID，用于流式消息的追加
+    val conversationId: String? = null,
+    // 流式消息状态：true表示流式输出已完成，false表示正在流式输出或普通消息
+    val isStreamCompleted: Boolean = true
 ) {
     
     // 判断消息类型的辅助方法
@@ -35,14 +39,16 @@ data class Message(
             )
         }
         
-        fun createReceivedMessage(content: String, senderName: String, senderId: String): Message {
+        fun createReceivedMessage(content: String, senderName: String, senderId: String, conversationId: String? = null, isStreamCompleted: Boolean = true): Message {
             return Message(
                 id = System.currentTimeMillis().toString(),
                 content = content,
                 senderId = senderId,
                 senderName = senderName,
                 timestamp = System.currentTimeMillis(),
-                isSentByMe = false
+                isSentByMe = false,
+                conversationId = conversationId,
+                isStreamCompleted = isStreamCompleted
             )
         }
         
@@ -56,7 +62,8 @@ data class Message(
             videoData: String? = null,
             audioData: String? = null,
             multimediaType: String? = null,
-            messageType: String? = null
+            messageType: String? = null,
+            conversationId: String? = null
         ): Message {
             return Message(
                 id = System.currentTimeMillis().toString(),
@@ -69,7 +76,8 @@ data class Message(
                 videoData = videoData,
                 audioData = audioData,
                 multimediaType = multimediaType,
-                messageType = messageType
+                messageType = messageType,
+                conversationId = conversationId
             )
         }
     }

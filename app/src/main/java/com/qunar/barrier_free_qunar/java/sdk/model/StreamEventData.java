@@ -13,12 +13,31 @@ public class StreamEventData {
      * 事件类型枚举
      */
     public enum EventType {
-        START_OF_LLM,    // 开始接收数据
-        AGENT_NAME,      // 代理名称
-        MESSAGE,         // 消息事件
-        DELTA,           // 内容增量
-        END_OF_LLM,      // 结束接收数据
-        UNKNOWN          // 未知事件类型
+        START_OF_LLM("start_of_llm"),    // 开始接收数据
+        AGENT_NAME("agent_name"),      // 代理名称
+        MESSAGE("message"),         // 消息事件
+        DELTA("delta"),           // 内容增量
+        END_OF_LLM("end_of_llm"),
+        UNKNOWN("");          // 未知事件类型
+
+        public String code;
+
+        EventType(String code) {
+            this.code = code;
+        }
+
+        public static EventType fromCode(String code){
+
+            for (EventType value : values()) {
+                if (value.code.equals(code)) {
+                    return value;
+                }
+            }
+
+            return UNKNOWN;
+        }
+
+
     }
     
     /**

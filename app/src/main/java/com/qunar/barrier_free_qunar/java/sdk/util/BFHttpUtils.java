@@ -47,7 +47,7 @@ public class BFHttpUtils {
     private static void initClients() {
         // 日志拦截器
         HttpLoggingInterceptor loggingInterceptor = new HttpLoggingInterceptor();
-        loggingInterceptor.setLevel(HttpLoggingInterceptor.Level.BODY);
+        loggingInterceptor.setLevel(HttpLoggingInterceptor.Level.BASIC);
         
         // 连接池配置
         ConnectionPool connectionPool = new ConnectionPool(

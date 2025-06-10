@@ -77,41 +77,36 @@ public class StreamEventParser {
      * 解析事件行
      */
     private static StreamEventData parseEventLine(String eventLine) {
-        String eventType = eventLine.substring(6).trim(); // 移除"event:"前缀
-        logCollector.d(TAG, "解析事件类型: " + eventType);
+        String eventTypeStr = eventLine.substring(6).trim(); // 移除"event:"前缀
+        logCollector.d(TAG, "解析事件类型: " + eventTypeStr);
         
         StreamEventData eventData = new StreamEventData();
-        
+
+        StreamEventData.EventType eventType = StreamEventData.EventType.fromCode(eventTypeStr);
+        eventData.setEventType(eventType);
+
         switch (eventType) {
-            case "start_of_llm":
+            case START_OF_LLM:
                 currentState = ParseState.WAITING_AGENT;
-                eventData.setEventType(StreamEventData.EventType.START_OF_LLM);
                 logCollector.i(TAG, "开始LLM流程，状态切换到WAITING_AGENT");
                 break;
-                
-            case "message":
+            case MESSAGE:
                 if (currentState == ParseState.READY_TO_BROADCAST) {
                     currentState = ParseState.BROADCASTING;
-                    eventData.setEventType(StreamEventData.EventType.MESSAGE);
                     eventData.setShouldStartBroadcast(true);
                     logCollector.i(TAG, "开始消息广播，状态切换到BROADCASTING");
                 } else {
-                    eventData.setEventType(StreamEventData.EventType.MESSAGE);
                     logCollector.d(TAG, "接收到message事件，但状态不允许广播: " + currentState);
                 }
                 break;
                 
-            case "end_of_llm":
+            case END_OF_LLM:
                 currentState = ParseState.COMPLETED;
-                eventData.setEventType(StreamEventData.EventType.END_OF_LLM);
                 logCollector.i(TAG, "LLM流程结束，状态切换到COMPLETED");
                 // 重置状态为下次使用做准备
                 resetState();
                 break;
-
-                
             default:
-                eventData.setEventType(StreamEventData.EventType.UNKNOWN);
                 logCollector.w(TAG, "未知事件类型: " + eventType);
                 break;
         }
@@ -144,6 +139,7 @@ public class StreamEventParser {
                 
                 // 如果是需要广播的代理类型，切换状态
                 if (currentAgentType == StreamEventData.AgentType.INSTRUCT_EXTRACTOR ||
+                        currentAgentType == StreamEventData.AgentType.COORDINATOR ||
                         currentAgentType == StreamEventData.AgentType.OPERATOR ||
                     currentAgentType == StreamEventData.AgentType.PLANNER) {
                     currentState = ParseState.READY_TO_BROADCAST;
@@ -267,10 +263,17 @@ public class StreamEventParser {
         String fixed = jsonString.trim();
         
         try {
-            // 修复缺少引号的键名
-            fixed = fixed.replaceAll("([a-zA-Z_][a-zA-Z0-9_]*)\\s*:", "\"$1\":");
+            // 只对明确的JSON格式进行修复，避免处理普通文本内容
+            if (!isLikelyJson(fixed)) {
+                logCollector.d(TAG, "内容不像JSON格式，跳过修复: " + fixed);
+                return jsonString;
+            }
             
-            // 修复缺少引号的字符串值
+            // 修复缺少引号的键名（只在JSON对象上下文中）
+            fixed = fixed.replaceAll("\\{\\s*([a-zA-Z_][a-zA-Z0-9_]*)\\s*:", "{\"$1\":");
+            fixed = fixed.replaceAll(",\\s*([a-zA-Z_][a-zA-Z0-9_]*)\\s*:", ",\"$1\":");
+            
+            // 修复缺少引号的字符串值（只在JSON值位置）
             fixed = fixed.replaceAll(":\\s*([a-zA-Z_][a-zA-Z0-9_]*)(?=\\s*[,}])", ": \"$1\"");
             
             logCollector.d(TAG, "JSON修复结果: " + fixed);
@@ -281,6 +284,22 @@ public class StreamEventParser {
         }
         
         return fixed;
+    }
+    
+    /**
+     * 判断字符串是否可能是JSON格式
+     */
+    private static boolean isLikelyJson(String str) {
+        if (str == null || str.trim().isEmpty()) {
+            return false;
+        }
+        
+        String trimmed = str.trim();
+        // 检查是否以JSON对象或数组的标识符开始和结束
+        return (trimmed.startsWith("{") && trimmed.endsWith("}")) ||
+               (trimmed.startsWith("[") && trimmed.endsWith("]")) ||
+               // 或者包含典型的JSON结构特征
+               (trimmed.contains("{") && trimmed.contains("}") && trimmed.contains(":"));
     }
 
     /**

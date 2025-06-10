@@ -3,6 +3,7 @@ package com.qunar.barrier_free_qunar.java.service;
 
 import android.accessibilityservice.AccessibilityService;
 import android.annotation.SuppressLint;
+import android.os.SystemClock;
 import android.util.Log;
 
 
@@ -23,7 +24,9 @@ import com.qunar.barrier_free_qunar.java.sdk.util.StreamEventParser;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -40,6 +43,15 @@ public class UserTaskService {
     private BroadcastSender broadcastSender;
 
     private ActionManager actionManager;
+
+    // 用于跟踪已完成的任务，防止重复发送
+    private final Set<String> completedTasks = ConcurrentHashMap.newKeySet();
+    
+    // 用于跟踪已处理的请求，防止重复请求
+    private final Set<String> processedRequests = ConcurrentHashMap.newKeySet();
+    
+    // 用于同步onComplete方法的锁对象
+    private final Object completeLock = new Object();
 
     public UserTaskService(AccessibilityService accessibilityService) {
         this.accessibilityService = accessibilityService;
@@ -62,73 +74,149 @@ public class UserTaskService {
             // 最大执行步数
             int limitStep = userTask.getLimitStep();
 
-            // 这里先执行一波返回主页
-            gestureApi.home();
-            // 截个屏幕给模型
-            String screenShotUrl = gestureApi.screenShot();
-            Log.d("【UserTaskService】", "截图返回URL：" + screenShotUrl + ",执行参数,currentStep:" + currentStep + ", 最大执行步长：" + limitStep);
+
             String sessionId = UUID.randomUUID().toString().substring(0, 10);
 
-
-            sendMultimediaMessage("", screenShotUrl, userTask.getInstruction(), sessionId, "");
-
-
             LlmUtil.LlmRequest llmRequest = LlmUtil.newRequest(sessionId, new String[]{"instruct_extractor", "operator"}, true);
-
             llmRequest.addUserText(userTask.getInstruction())
-                    .addAssistantMessage(userTask.getThrough())
-                    .addUserImage(screenShotUrl);
+                    .addAssistantMessage(userTask.getThrough());
 
             Map<String, String> headers = llmRequest.getHeaders();
-            CountDownLatch countDownLatch = new CountDownLatch(1);
+
+            // 这里先执行一波返回主页
+            gestureApi.home();
             for (; currentStep < limitStep; currentStep++) {
-                // 每次需要重置
+                // 生成请求唯一标识，防止重复请求
+                String requestKey = sessionId + "_step_" + currentStep;
+                
+                // 检查是否已经处理过这个请求
+                if (processedRequests.contains(requestKey)) {
+                    Log.d("【UserTaskService】", "请求已处理，跳过: " + requestKey);
+                    continue;
+                }
+                
+                // 标记请求为已处理
+                processedRequests.add(requestKey);
+                Log.d("【UserTaskService】", "开始处理请求: " + requestKey);
+                
+                // 每次循环创建新的CountDownLatch
+                CountDownLatch stepLatch = new CountDownLatch(1);
+                AtomicBoolean stepCompleted = new AtomicBoolean(false);
                 AtomicBoolean isBroad = new AtomicBoolean(false);
                 Map<String, Object> requestBody = llmRequest.getRequestBody();
 
-
                 Log.d("【执行操作指令】", "requestBody：" + JsonUtil.toJson(requestBody));
+
+
+                // 截个屏幕给模型
+                String screenShotUrl = gestureApi.screenShot();
+                String nConversationId = UUID.randomUUID().toString().substring(0, 10);
+                sendMultimediaMessage("", screenShotUrl, userTask.getInstruction(), sessionId, nConversationId);
+                llmRequest.addUserImage(screenShotUrl);
 
                 // 调用大LLM
                 BFHttpUtils.postObjectStream(URLConst.LLM_STREAM_URL, requestBody, headers, new BFHttpUtils.StreamCallback() {
                     private StringBuilder responseBuilder = new StringBuilder();
                     private String conversationId = "";
                     private StringBuilder finalContent = new StringBuilder();
+                    // 用于防止重复处理相同chunk的集合
+                    private final Set<String> processedChunks = ConcurrentHashMap.newKeySet();
+                    // 用于同步chunk处理的锁
+                    private final Object chunkLock = new Object();
 
                     @Override
                     public void onChunk(String chunk) {
+
                         Log.d("【UserTaskService】", "接收消息：" + chunk);
-                        responseBuilder.append(chunk);
-                        // 使用StreamEventParser解析数据
-                        StreamEventData eventDatum = StreamEventParser.parseChunk(chunk);
-                        if (eventDatum != null) {
-                            // 创建包含图片的多媒体消息请求
-                            String content = broadcastSender.handleStreamEvent(eventDatum, chunk, sessionId, isBroad);
-                            finalContent.append(content);
-                            if (!conversationId.isBlank() && eventDatum.getMessageId() != null && !eventDatum.getMessageId().isBlank()) {
-                                conversationId = eventDatum.getMessageId();
+
+                            responseBuilder.append(chunk);
+                            // 使用StreamEventParser解析数据
+                            StreamEventData eventDatum = StreamEventParser.parseChunk(chunk);
+                            if (eventDatum != null) {
+                                // 更新conversationId（如果有的话）
+                                if (eventDatum.getMessageId() != null && !eventDatum.getMessageId().isBlank()) {
+                                    conversationId = eventDatum.getMessageId();
+                                }
+                                // 处理流式事件，让BroadcastSender内部决定是否发送
+                                String content = broadcastSender.handleStreamEvent(eventDatum, chunk, sessionId, isBroad);
+                                if (content != null && !content.isEmpty()) {
+                                    finalContent.append(content);
+                                }
                             }
+                        }
+
+
+                    @Override
+                    public void onComplete() {
+                        // 使用CAS确保只执行一次
+                        if (!stepCompleted.compareAndSet(false, true)) {
+                            Log.d("【UserTaskService】", "步骤已完成，忽略重复调用: " + requestKey);
+                            return;
+                        }
+                        
+                        // 生成任务唯一标识key，基于sessionId和conversationId
+                        String taskKey = sessionId + "_" + (conversationId != null ? conversationId : "default");
+                        
+                        synchronized (completeLock) {
+                            // 检查是否已经完成过相同的任务
+                            if (completedTasks.contains(taskKey)) {
+                                Log.d("【UserTaskService】", "任务已完成，跳过重复发送: " + taskKey);
+                                stepLatch.countDown();
+                                return;
+                            }
+                            
+                            // 标记任务为已完成
+                            completedTasks.add(taskKey);
+                            Log.d("【UserTaskService】", "开始处理任务: " + taskKey);
+                        }
+                        
+                        try {
+                            SystemClock.sleep(4000);
+                            // 解析并执行finalContent中的动作指令
+                            processActionCommands(finalContent.toString());
+                            llmRequest.addAssistantMessage(finalContent.toString());
+                            Log.d("【UserTaskService】", "任务处理完成: " + taskKey);
+                        } catch (Exception e) {
+                            Log.e("【UserTaskService】", "处理任务时发生异常: " + taskKey, e);
+                            // 如果处理失败，从已完成集合中移除，允许重试
+                            synchronized (completeLock) {
+                                completedTasks.remove(taskKey);
+                            }
+                            // 同时从请求集合中移除，允许重试
+                            processedRequests.remove(requestKey);
+                        } finally {
+                            // TODO 这里发送广播是异步的，这里应该join一下，后续做吧，现在循环里面waite一会吧
+                            stepLatch.countDown();
                         }
                     }
 
                     @Override
-                    public void onComplete() {
-                        // 解析并执行finalContent中的动作指令
-                        processActionCommands(finalContent.toString());
-                        String nextImage = gestureApi.screenShot();
-                        llmRequest.addUserText(finalContent.toString())
-                                .addUserImage(nextImage);
-                        sendMultimediaMessage("", nextImage, finalContent.toString(), sessionId, "");
-                        countDownLatch.countDown();
-                    }
-
-                    @Override
                     public void onError(String error) {
-                        countDownLatch.countDown();
+                        // 使用CAS确保只执行一次
+                        if (!stepCompleted.compareAndSet(false, true)) {
+                            Log.d("【UserTaskService】", "步骤已完成，忽略错误回调: " + requestKey);
+                            return;
+                        }
+                        
+                        Log.e("【UserTaskService】", "stream处理任务时发生异常: " + error + ", requestKey: " + requestKey);
+                        
+                        // 发生错误时，从请求集合中移除，允许重试
+                        processedRequests.remove(requestKey);
+                        
+                        stepLatch.countDown();
                     }
                 });
 
-                countDownLatch.await();
+                try {
+                    stepLatch.await();
+                    Log.d("【UserTaskService】", "步骤完成，等待下一步: " + requestKey);
+                } catch (InterruptedException e) {
+                    Log.e("【UserTaskService】", "等待步骤完成时被中断: " + requestKey, e);
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+                
+                SystemClock.sleep(6000);
             }
 
 

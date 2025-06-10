@@ -54,6 +54,10 @@ class ChatActivity : AppCompatActivity() {
     // 广播接收器ID
     private val CHAT_RECEIVER_ID = "chat_activity_receiver"
     
+    // 消息去重：存储已处理的消息ID和内容哈希
+    private val processedMessages = mutableSetOf<String>()
+    private val processedStreamChunks = mutableMapOf<String, StringBuilder>() // conversationId -> 已处理的内容
+    
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_chat)
@@ -94,9 +98,34 @@ class ChatActivity : AppCompatActivity() {
                     
                     // 检查消息是否为空或者是多媒体消息
                     if (!messageData.reply.isNullOrEmpty() || messageData.hasMultimediaContent()) {
+                        // 消息去重检查
+                        val messageKey = generateMessageKey(messageData)
+                        if (processedMessages.contains(messageKey)) {
+                            Log.d("【ChatActivity】消息去重", "检测到重复消息，跳过处理: $messageKey")
+                            return
+                        }
+                        
+                        // 标记消息为已处理
+                        processedMessages.add(messageKey)
+                        
                         removeThinkingMessage()
                         // 在主线程中更新UI
                         runOnUiThread {
+                            val conversationId = messageData.conversationId ?: ""
+                            val content = messageData.reply ?: ""
+                            
+                            // 如果有conversationId，尝试追加到现有消息
+                            if (conversationId.isNotEmpty() && content.isNotEmpty()) {
+                                val appended = chatAdapter.appendToMessageByConversationId(conversationId, content)
+                                if (appended) {
+                                    Log.d("【ChatActivity】消息追加", "成功追加到现有消息: conversationId=$conversationId")
+                                    // 滚动到最新消息
+                                    rvMessages.scrollToPosition(chatAdapter.itemCount - 1)
+                                    return@runOnUiThread
+                                }
+                            }
+                            
+                            // 如果没有找到现有消息，创建新消息
                             displayMessage(
                                 messageData.originalMessage ?: "",
                                 messageData.reply ?: "",
@@ -191,6 +220,18 @@ class ChatActivity : AppCompatActivity() {
         accessibilitySettingsObserver?.let {
             contentResolver.unregisterContentObserver(it)
         }
+        
+        // 清理消息去重缓存
+        clearMessageCache()
+    }
+    
+    /**
+     * 清理消息缓存
+     */
+    private fun clearMessageCache() {
+        processedMessages.clear()
+        processedStreamChunks.clear()
+        Log.d("【ChatActivity】消息去重", "已清理所有消息缓存")
     }
     
     private fun initViews() {
@@ -309,6 +350,13 @@ class ChatActivity : AppCompatActivity() {
     }
     
     /**
+     * 生成消息唯一标识符用于去重
+     */
+    private fun generateMessageKey(messageData: BaseBroadcastReceiver.MessageData): String {
+        return "${messageData.senderId}_${messageData.timestamp}_${messageData.reply?.hashCode()}_${messageData.conversationId}"
+    }
+    
+    /**
      * 移除思考消息
      */
     private fun removeThinkingMessage() {
@@ -373,8 +421,14 @@ class ChatActivity : AppCompatActivity() {
             // 根据消息类型处理不同的显示逻辑
             when (messageType) {
                 BroadcastConst.MessageType.TEXT -> {
-                    // 普通文本消息 - 添加回复消息
-                    addReplyMessage(reply)
+                    // 普通文本消息
+                    val message = Message.createReceivedMessage(
+                        content = reply,
+                        senderName = senderName,
+                        senderId = senderId,
+                        conversationId = conversationId
+                    )
+                    chatAdapter.addMessage(message)
                 }
                 BroadcastConst.MessageType.STREAM_CHUNK -> {
                     // 流式消息块，使用conversationId来区分不同的对话
@@ -394,10 +448,23 @@ class ChatActivity : AppCompatActivity() {
                     // 系统消息
                     if (reply == "[流式响应完成]") {
                         // 流式响应完成，重置流式对话状态
-                        currentStreamConversationId = null
-                        currentStreamMessageIndex = -1
+                        // 如果有当前流式消息，标记其为完成状态
+                        if (currentStreamMessageIndex >= 0) {
+                            chatAdapter.markStreamCompleted(currentStreamMessageIndex)
+                            Log.d("【ChatActivity】流式完成", "标记流式消息完成: index=$currentStreamMessageIndex")
+                        }
+                        
                         // 通知ChatAdapter重置流式消息索引
                         chatAdapter.setCurrentStreamMessageIndex(-1)
+                        
+                        // 清理当前对话的流式消息去重缓存
+                        currentStreamConversationId?.let { conversationId ->
+                            processedStreamChunks.remove(conversationId)
+                            Log.d("【ChatActivity】流式消息去重", "清理对话缓存: $conversationId")
+                        }
+                        
+                        currentStreamConversationId = null
+                        currentStreamMessageIndex = -1
 
                         // 不显示完成标记消息，只重置状态
                     } else {
@@ -430,7 +497,8 @@ class ChatActivity : AppCompatActivity() {
                         videoData = videoData,
                         audioData = audioData,
                         multimediaType = multimediaType,
-                        messageType = messageType
+                        messageType = messageType,
+                        conversationId = conversationId
                     )
                     
                     Log.d("【ChatActivity】多媒体", "创建的消息对象: id=${multimediaMessage.id}, hasImage=${multimediaMessage.isImageMessage()}, imageData=${multimediaMessage.imageData}")
@@ -460,14 +528,56 @@ class ChatActivity : AppCompatActivity() {
      * 处理流式消息块
      */
     private fun handleStreamChunk(chunk: String, senderName: String, senderId: String, conversationId: String) {
-        // Log.d("ChatActivity", "处理流式消息块: chunk='$chunk', conversationId='$conversationId', currentConversationId='$currentStreamConversationId'")
+        // 检查chunk是否有效
+        if (chunk.isBlank()) {
+            Log.d("【ChatActivity】流式消息", "chunk为空，跳过处理: conversationId='$conversationId'")
+            return
+        }
+        
+        Log.d("【ChatActivity】流式消息", "处理流式消息块: chunk='$chunk', conversationId='$conversationId', currentConversationId='$currentStreamConversationId'")
+        
+        // 流式消息去重检查
+        if (conversationId.isNotBlank()) {
+            val existingContent = processedStreamChunks.getOrPut(conversationId) { StringBuilder() }
+            if (existingContent.contains(chunk)) {
+                Log.d("【ChatActivity】流式消息去重", "检测到重复的流式消息块，跳过处理: chunk='$chunk', conversationId='$conversationId'")
+                return
+            }
+            // 记录已处理的内容
+            existingContent.append(chunk)
+        }
+        
+        // 如果conversationId为空，但已经有流式对话在进行，继续追加到当前消息
+        if (conversationId.isBlank() && currentStreamConversationId != null && currentStreamMessageIndex >= 0) {
+            Log.d("【ChatActivity】流式消息", "conversationId为空，但继续追加到当前流式消息")
+            if (currentStreamMessageIndex < messages.size) {
+                chatAdapter.appendToMessageWithEffect(currentStreamMessageIndex, chunk)
+            }
+            // 滚动到最新消息
+            if (chatAdapter.itemCount > 0) {
+                rvMessages.scrollToPosition(chatAdapter.itemCount - 1)
+            }
+            return
+        }
+        
+        // 如果conversationId为空且没有进行中的流式对话，跳过处理
+        if (conversationId.isBlank()) {
+            Log.w("【ChatActivity】流式消息", "conversationId为空且无进行中的流式对话，跳过处理: chunk='$chunk'")
+            return
+        }
+        
         // 检查是否是新的流式对话
         if (currentStreamConversationId != conversationId) {
+            // 先移除思考消息（如果存在）
+            removeThinkingMessage()
+            
             // 新的流式对话，创建新消息（初始为空，然后用打字机效果显示第一个chunk）
             val streamMessage = Message.createReceivedMessage(
                 content = "",
                 senderName = senderName,
-                senderId = senderId
+                senderId = senderId,
+                conversationId = conversationId,
+                isStreamCompleted = false // 流式消息创建时标记为未完成
             )
             chatAdapter.addMessage(streamMessage)
             currentStreamConversationId = conversationId
@@ -476,7 +586,7 @@ class ChatActivity : AppCompatActivity() {
             // 通知ChatAdapter当前流式消息的索引
             chatAdapter.setCurrentStreamMessageIndex(currentStreamMessageIndex)
             
-
+            Log.d("【ChatActivity】流式消息", "创建新的流式消息，索引: $currentStreamMessageIndex")
             
             // 添加第一个chunk并应用打字机效果
             if (currentStreamMessageIndex >= 0 && currentStreamMessageIndex < messages.size) {
@@ -485,8 +595,10 @@ class ChatActivity : AppCompatActivity() {
         } else {
             // 同一对话，追加到现有消息并应用打字机效果
             if (currentStreamMessageIndex >= 0 && currentStreamMessageIndex < messages.size) {
+                Log.d("【ChatActivity】流式消息", "追加到现有消息，索引: $currentStreamMessageIndex")
                 chatAdapter.appendToMessageWithEffect(currentStreamMessageIndex, chunk)
-
+            } else {
+                Log.w("【ChatActivity】流式消息", "无效的消息索引: $currentStreamMessageIndex, 消息总数: ${messages.size}")
             }
         }
         

@@ -29,21 +29,36 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import com.qunar.barrier_free_qunar.java.sdk.model.StreamEventData;
 import com.qunar.barrier_free_qunar.java.sdk.util.StreamEventParser;
+import com.qunar.barrier_free_qunar.java.sdk.ui.FloatingButtonService;
+import com.qunar.barrier_free_qunar.java.sdk.ui.AppStateMonitor;
+import com.qunar.barrier_free_qunar.java.sdk.ui.ActivityStateMonitor;
+import com.qunar.barrier_free_qunar.java.sdk.ui.FloatingButtonDebugHelper;
+import android.app.Application;
 
 public class GlobalAccessibilityService extends AccessibilityService {
 
     private static final String TAG = "GlobalAccessibilityService";
+    private static GlobalAccessibilityService instance;
     private UserTaskService userTaskService;
 
     private String currentSessionId;
     private BroadcastSender broadcastSender;
     private LogCollector logCollector;
+    private FloatingButtonService floatingButtonService;
+    private AppStateMonitor appStateMonitor;
+    private ActivityStateMonitor activityStateMonitor;
 
-
-
+    /**
+     * 获取GlobalAccessibilityService的实例
+     * @return 当前运行的服务实例，如果服务未运行则返回null
+     */
+    public static GlobalAccessibilityService getInstance() {
+        return instance;
+    }
 
     @Override
     protected void onServiceConnected() {
+        instance = this;
         super.onServiceConnected();
         AccessibilityServiceInfo info = new AccessibilityServiceInfo();
         // 只监听点击事件，避免过多事件导致卡顿
@@ -60,8 +75,100 @@ public class GlobalAccessibilityService extends AccessibilityService {
         broadcastSender = new BroadcastSender(this);
         logCollector = LogCollector.Companion.getInstance();
 
+        // 初始化悬浮按钮服务
+        floatingButtonService = new FloatingButtonService(this, userTaskService);
+
+        // 初始化Activity状态监听器（更精确的界面状态检测）
+        activityStateMonitor = new ActivityStateMonitor();
+        activityStateMonitor.setListener(new ActivityStateMonitor.AppStateListener() {
+            @Override
+            public void onAppBecomeVisible() {
+                // 应用界面变为可见，隐藏悬浮按钮
+                logCollector.i(TAG, "应用界面变为可见");
+                if (floatingButtonService != null) {
+                    floatingButtonService.hideFloatingButton();
+                    logCollector.i(TAG, "应用界面可见，隐藏悬浮按钮");
+                } else {
+                    logCollector.w(TAG, "FloatingButtonService为空，无法隐藏悬浮按钮");
+                }
+            }
+
+            @Override
+            public void onAppBecomeInvisible() {
+                // 应用界面变为不可见，显示悬浮按钮
+                logCollector.i(TAG, "应用界面变为不可见");
+                if (floatingButtonService != null) {
+                    floatingButtonService.showFloatingButton();
+                    logCollector.i(TAG, "应用界面不可见，显示悬浮按钮");
+                } else {
+                    logCollector.w(TAG, "FloatingButtonService为空，无法显示悬浮按钮");
+                }
+            }
+        });
+
+        // 注册Activity生命周期监听器
+        try {
+            Application app = (Application) getApplicationContext();
+            app.registerActivityLifecycleCallbacks(activityStateMonitor);
+            logCollector.i(TAG, "Activity状态监听器已注册");
+        } catch (Exception e) {
+            logCollector.e(TAG, "注册Activity状态监听器失败", e);
+        }
+
+        // 保留原有的应用状态监听器作为备用
+        appStateMonitor = new AppStateMonitor(this);
+        appStateMonitor.setAppStateListener(new AppStateMonitor.AppStateListener() {
+            @Override
+            public void onAppEnterForeground() {
+                logCollector.d(TAG, "备用监听器：应用进入前台");
+            }
+
+            @Override
+            public void onAppEnterBackground() {
+                logCollector.d(TAG, "备用监听器：应用进入后台");
+            }
+        });
+
+        // 开始监听应用状态
+        appStateMonitor.startMonitoring();
+
+        // 延迟3秒后进行调试检查，但不立即显示悬浮按钮
+        new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+            // 进行完整的调试检查
+            FloatingButtonDebugHelper.debugFloatingButton(this, floatingButtonService, appStateMonitor);
+
+            // 检查权限
+            if (!FloatingButtonDebugHelper.checkOverlayPermission(this)) {
+                logCollector.e(TAG, "缺少悬浮窗权限，无法显示悬浮按钮");
+                return;
+            }
+
+            // 记录当前状态但不立即显示悬浮按钮
+            if (floatingButtonService != null && activityStateMonitor != null) {
+                boolean isAppVisible = activityStateMonitor.isAppVisible();
+                logCollector.i(TAG, "服务启动时Activity状态检查 - " + activityStateMonitor.getStateInfo());
+                logCollector.i(TAG, "悬浮按钮将在应用切换到后台时自动显示");
+            } else {
+                logCollector.e(TAG, "FloatingButtonService或ActivityStateMonitor未初始化");
+            }
+        }, 3000);
+
         logCollector.i(TAG, "无障碍服务已连接，包名: " + getPackageName());
         logCollector.i(TAG, "会话ID已生成: " + currentSessionId);
+        logCollector.i(TAG, "悬浮按钮服务已初始化");
+    }
+
+
+    /**
+     * 手动检查应用状态（用于调试）
+     */
+    public void checkAppState() {
+        if (appStateMonitor != null) {
+            logCollector.i(TAG, "当前应用状态: " + (appStateMonitor.isCurrentlyInForeground() ? "前台" : "后台"));
+            appStateMonitor.updateState();
+        } else {
+            logCollector.e(TAG, "AppStateMonitor未初始化");
+        }
     }
 
     @Override
@@ -70,10 +177,6 @@ public class GlobalAccessibilityService extends AccessibilityService {
             return;
         }
 
-        // 只处理本应用的事件
-        if (!getPackageName().equals(event.getPackageName())) {
-            return;
-        }
 
         // 只处理点击事件
         if (event.getEventType() == AccessibilityEvent.TYPE_VIEW_CLICKED) {
@@ -442,11 +545,52 @@ public class GlobalAccessibilityService extends AccessibilityService {
 
 
     @Override
+    public void onDestroy() {
+        super.onDestroy();
+        instance = null;
+        logCollector.i(TAG, "无障碍服务销毁");
+        
+        // 取消注册Activity生命周期监听器
+        if (activityStateMonitor != null) {
+            try {
+                Application app = (Application) getApplicationContext();
+                app.unregisterActivityLifecycleCallbacks(activityStateMonitor);
+                logCollector.i(TAG, "Activity状态监听器已取消注册");
+            } catch (Exception e) {
+                logCollector.e(TAG, "取消注册Activity状态监听器失败", e);
+            }
+        }
+        
+        // 停止应用状态监听
+        if (appStateMonitor != null) {
+            appStateMonitor.stopMonitoring();
+        }
+        
+        // 隐藏悬浮按钮
+        if (floatingButtonService != null) {
+            floatingButtonService.hideFloatingButton();
+        }
+    }
+
+    @Override
     public boolean onUnbind(Intent intent) {
         // 服务关闭时调用，释放资源
         if (logCollector != null) {
             logCollector.i(TAG, "无障碍服务已断开连接");
         }
+        
+        // 清理悬浮按钮服务
+        if (floatingButtonService != null) {
+            floatingButtonService.destroy();
+            floatingButtonService = null;
+        }
+        
+        // 清理应用状态监听器
+        if (appStateMonitor != null) {
+            appStateMonitor.destroy();
+            appStateMonitor = null;
+        }
+        
         return super.onUnbind(intent);
     }
 
