@@ -168,24 +168,7 @@ public class AppStateMonitor {
         return isAppInForeground;
     }
     
-    /**
-     * 手动更新应用状态（用于特殊情况）
-     */
-    public void updateAppState(boolean inForeground) {
-        if (isAppInForeground != inForeground) {
-            isAppInForeground = inForeground;
-            
-            if (listener != null) {
-                if (isAppInForeground) {
-                    Log.d(TAG, "手动设置应用进入前台");
-                    listener.onAppEnterForeground();
-                } else {
-                    Log.d(TAG, "手动设置应用进入后台");
-                    listener.onAppEnterBackground();
-                }
-            }
-        }
-    }
+
     
     /**
      * 清理资源

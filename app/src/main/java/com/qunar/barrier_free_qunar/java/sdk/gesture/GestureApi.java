@@ -32,8 +32,8 @@ public class GestureApi {
      * @param slidPoint 坐标系
      * @return 执行成功与否
      */
-    public boolean slider(SlidPoint slidPoint) {
-        return gestureInstance.performSwipeGesture(slidPoint);
+    public boolean scroll(SlidPoint slidPoint) {
+        return gestureInstance.slider(slidPoint);
     }
 
 

@@ -4,7 +4,14 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.util.Log;
+
+import com.qunar.barrier_free_qunar.java.sdk.model.broadcast.AIResponseData;
+import com.qunar.barrier_free_qunar.java.sdk.model.broadcast.MessageData;
+import com.qunar.barrier_free_qunar.java.sdk.model.broadcast.UserInputData;
 import com.qunar.barrier_free_qunar.java.sdk.consts.BroadcastConst;
+
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * 广播接收器基类
@@ -13,17 +20,31 @@ import com.qunar.barrier_free_qunar.java.sdk.consts.BroadcastConst;
 public abstract class BaseBroadcastReceiver extends BroadcastReceiver {
     private static final String TAG = "BaseBroadcastReceiver";
     
+    /**
+     * 获取当前接收器的唯一标识
+     * 子类必须实现此方法以提供接收器ID
+     */
+    protected abstract String getReceiverId();
+    
     @Override
     public final void onReceive(Context context, Intent intent) {
         try {
+
             if (intent == null || intent.getAction() == null) {
                 Log.w(TAG, "接收到空的广播或动作");
                 return;
             }
             
             String action = intent.getAction();
-
             
+            // 检查目标接收器过滤
+            String targetReceiverId = intent.getStringExtra(BroadcastConst.Extra.BROADCAST_PRIMARY_KEY);
+
+            if (targetReceiverId == null || targetReceiverId.trim().isEmpty()) {
+                Log.i(TAG, "广播接收器收到消息,targetReceiverId=" + targetReceiverId + "过滤");
+                return;
+            }
+
             // 根据不同的广播动作分发处理
             switch (action) {
                 case BroadcastConst.Action.SIMULATE_MESSAGE:
@@ -59,6 +80,8 @@ public abstract class BaseBroadcastReceiver extends BroadcastReceiver {
         String messageType = intent.getStringExtra(BroadcastConst.Extra.MESSAGE_TYPE);
         String sessionId = intent.getStringExtra(BroadcastConst.Extra.SESSION_ID);
         String conversationId = intent.getStringExtra(BroadcastConst.Extra.CONVERSATION_ID);
+        String broadcastPrimaryKey = intent.getStringExtra(BroadcastConst.Extra.BROADCAST_PRIMARY_KEY);
+
         long timestamp = intent.getLongExtra(BroadcastConst.Extra.TIMESTAMP, System.currentTimeMillis());
         
         // 解析多媒体字段
@@ -68,9 +91,18 @@ public abstract class BaseBroadcastReceiver extends BroadcastReceiver {
         String multimediaType = intent.getStringExtra(BroadcastConst.Extra.MULTIMEDIA_TYPE);
         String multimediaData = intent.getStringExtra(BroadcastConst.Extra.MULTIMEDIA_DATA);
         
+        // 提取额外参数
+        Map<String, Object> extras = new HashMap<>();
+        // 检查是否有输入控制相关的额外参数
+
+        if (intent.hasExtra("action")) {
+            extras.put("action", intent.getStringExtra("action"));
+        }
+        
         MessageData messageData = new MessageData(
+                broadcastPrimaryKey,
             originalMessage, reply, senderName, senderId, messageType, sessionId, conversationId, timestamp,
-            imageData, videoData, audioData, multimediaType, multimediaData
+            imageData, videoData, audioData, multimediaType, multimediaData, extras
         );
         
         onMessageReceived(context, messageData);
@@ -84,9 +116,10 @@ public abstract class BaseBroadcastReceiver extends BroadcastReceiver {
     private void handleUserInputBroadcast(Context context, Intent intent) {
         String userInput = intent.getStringExtra(BroadcastConst.Extra.USER_INPUT);
         String sessionId = intent.getStringExtra(BroadcastConst.Extra.SESSION_ID);
+        String broadcastKey = intent.getStringExtra(BroadcastConst.Extra.BROADCAST_PRIMARY_KEY);
         long timestamp = intent.getLongExtra(BroadcastConst.Extra.TIMESTAMP, System.currentTimeMillis());
         
-        UserInputData inputData = new UserInputData(userInput, sessionId, timestamp);
+        UserInputData inputData = new UserInputData(broadcastKey, userInput, sessionId, timestamp);
         
         onUserInputReceived(context, inputData);
     }
@@ -100,10 +133,12 @@ public abstract class BaseBroadcastReceiver extends BroadcastReceiver {
         String originalMessage = intent.getStringExtra(BroadcastConst.Extra.ORIGINAL_MESSAGE);
         String reply = intent.getStringExtra(BroadcastConst.Extra.REPLY);
         String sessionId = intent.getStringExtra(BroadcastConst.Extra.SESSION_ID);
+        String broadcastKey = intent.getStringExtra(BroadcastConst.Extra.BROADCAST_PRIMARY_KEY);
+
         long timestamp = intent.getLongExtra(BroadcastConst.Extra.TIMESTAMP, System.currentTimeMillis());
         long responseTime = intent.getLongExtra(BroadcastConst.Extra.RESPONSE_TIME, 0);
         
-        AIResponseData responseData = new AIResponseData(
+        AIResponseData responseData = new AIResponseData(broadcastKey,
             originalMessage, reply, sessionId, timestamp, responseTime
         );
         
@@ -165,123 +200,5 @@ public abstract class BaseBroadcastReceiver extends BroadcastReceiver {
      */
     protected void onError(Context context, Intent intent, Exception error) {
         // 默认空实现，子类可选择性重写
-    }
-    
-    // 数据类定义
-    
-    /**
-     * 消息数据类
-     */
-    public static class MessageData {
-        public final String originalMessage;
-        public final String reply;
-        public final String senderName;
-        public final String senderId;
-        public final String messageType;
-        public final String sessionId;
-        public final String conversationId;
-        public final long timestamp;
-        
-        // 多媒体字段
-        public final String imageData;
-        public final String videoData;
-        public final String audioData;
-        public final String multimediaType;
-        public final String multimediaData;
-        
-        public MessageData(String originalMessage, String reply, String senderName, 
-                          String senderId, String messageType, String sessionId, String conversationId, long timestamp) {
-            this(originalMessage, reply, senderName, senderId, messageType, sessionId, conversationId, timestamp,
-                 null, null, null, null, null);
-        }
-        
-        public MessageData(String originalMessage, String reply, String senderName, 
-                          String senderId, String messageType, String sessionId, String conversationId, long timestamp,
-                          String imageData, String videoData, String audioData, String multimediaType, String multimediaData) {
-            this.originalMessage = originalMessage;
-            this.reply = reply;
-            this.senderName = senderName;
-            this.senderId = senderId;
-            this.messageType = messageType;
-            this.sessionId = sessionId;
-            this.conversationId = conversationId;
-            this.timestamp = timestamp;
-            this.imageData = imageData;
-            this.videoData = videoData;
-            this.audioData = audioData;
-            this.multimediaType = multimediaType;
-            this.multimediaData = multimediaData;
-        }
-        
-        public boolean isStreamChunk() {
-            return BroadcastConst.MessageType.STREAM_CHUNK.equals(messageType);
-        }
-        
-        public boolean isError() {
-            return BroadcastConst.MessageType.ERROR.equals(messageType);
-        }
-        
-        public boolean isSystemMessage() {
-            return BroadcastConst.MessageType.SYSTEM.equals(messageType);
-        }
-        
-        public boolean isTextMessage() {
-            return BroadcastConst.MessageType.TEXT.equals(messageType);
-        }
-        
-        public boolean isImageMessage() {
-            return BroadcastConst.MessageType.IMAGE.equals(messageType);
-        }
-        
-        public boolean isVideoMessage() {
-            return BroadcastConst.MessageType.VIDEO.equals(messageType);
-        }
-        
-        public boolean isAudioMessage() {
-            return BroadcastConst.MessageType.AUDIO.equals(messageType);
-        }
-        
-        public boolean isMultimediaMessage() {
-            return BroadcastConst.MessageType.MULTIMEDIA.equals(messageType);
-        }
-        
-        public boolean hasMultimediaContent() {
-            return imageData != null || videoData != null || audioData != null || multimediaData != null;
-        }
-    }
-    
-    /**
-     * 用户输入数据类
-     */
-    public static class UserInputData {
-        public final String userInput;
-        public final String sessionId;
-        public final long timestamp;
-        
-        public UserInputData(String userInput, String sessionId, long timestamp) {
-            this.userInput = userInput;
-            this.sessionId = sessionId;
-            this.timestamp = timestamp;
-        }
-    }
-    
-    /**
-     * AI响应数据类
-     */
-    public static class AIResponseData {
-        public final String originalMessage;
-        public final String reply;
-        public final String sessionId;
-        public final long timestamp;
-        public final long responseTime;
-        
-        public AIResponseData(String originalMessage, String reply, String sessionId, 
-                             long timestamp, long responseTime) {
-            this.originalMessage = originalMessage;
-            this.reply = reply;
-            this.sessionId = sessionId;
-            this.timestamp = timestamp;
-            this.responseTime = responseTime;
-        }
     }
 }

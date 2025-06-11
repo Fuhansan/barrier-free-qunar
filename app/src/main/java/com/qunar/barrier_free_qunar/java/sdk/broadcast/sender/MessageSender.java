@@ -1,6 +1,6 @@
 package com.qunar.barrier_free_qunar.java.sdk.broadcast.sender;
 
-import com.qunar.barrier_free_qunar.java.sdk.broadcast.model.MessageRequest;
+import com.qunar.barrier_free_qunar.java.sdk.model.broadcast.MessageRequest;
 
 /**
  * 消息发送器抽象基类
@@ -32,6 +32,10 @@ public abstract class MessageSender {
      */
     protected boolean validateRequest(MessageRequest request) {
         if (request == null) {
+            return false;
+        }
+
+        if(request.getBroadcastKey() == null ){
             return false;
         }
         

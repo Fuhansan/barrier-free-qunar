@@ -4,15 +4,13 @@ import android.content.Context;
 import android.util.Log;
 
 import com.qunar.barrier_free_qunar.LogCollector;
-import com.qunar.barrier_free_qunar.java.sdk.broadcast.model.MessageRequest;
+import com.qunar.barrier_free_qunar.java.sdk.model.broadcast.MessageRequest;
 import com.qunar.barrier_free_qunar.java.sdk.broadcast.sender.MessageSender;
 import com.qunar.barrier_free_qunar.java.sdk.broadcast.sender.StreamingMessageSender;
 import com.qunar.barrier_free_qunar.java.sdk.broadcast.sender.ShortConnectionMessageSender;
-import com.qunar.barrier_free_qunar.java.sdk.consts.BroadcastConst;
 import com.qunar.barrier_free_qunar.java.sdk.model.StreamEventData;
 import com.qunar.barrier_free_qunar.java.sdk.util.StreamEventParser;
 
-import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.ConcurrentHashMap;
@@ -184,6 +182,7 @@ public class BroadcastSender {
                         }
 
                         MessageRequest streamRequest = new MessageRequest.Builder()
+                                .broadCastKey(MessageRequest.BroadCastListenerKey.CHAT_MESSAGE_BROAD_CAST)
                                 .sendMode(MessageRequest.SendMode.STREAMING)
                                 .messageType(MessageRequest.MessageType.TEXT)
                                 .senderRole(MessageRequest.SenderRole.SYSTEM)
@@ -246,9 +245,7 @@ public class BroadcastSender {
             try {
                 // 非阻塞入队，如果队列满了则返回false
                 boolean success = queue.offer(request);
-                if (success) {
-                    logCollector.d(TAG, "消息已入队: " + broadcastId + ", 队列大小: " + queue.size());
-                } else {
+                if (!success) {
                     logCollector.w(TAG, "消息队列已满，丢弃消息: " + broadcastId);
                 }
                 return success;

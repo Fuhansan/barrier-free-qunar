@@ -131,6 +131,17 @@ public class BroadcastManager {
      * @return 是否发送成功
      */
     public boolean sendBroadcast(String action, Map<String, Object> extras) {
+        return sendBroadcast(action, extras, null);
+    }
+    
+    /**
+     * 发送广播（支持指定目标接收器）
+     * @param action 广播动作
+     * @param extras 广播数据
+     * @param targetReceiverId 目标接收器ID，为null时发送给所有注册该动作的接收器
+     * @return 是否发送成功
+     */
+    public boolean sendBroadcast(String action, Map<String, Object> extras, String targetReceiverId) {
         try {
             if (action == null) {
                 Log.w(TAG, "发送广播失败：动作不能为空");
@@ -138,6 +149,11 @@ public class BroadcastManager {
             }
             
             Intent intent = new Intent(action);
+            
+            // 如果指定了目标接收器，添加到Intent中
+            if (targetReceiverId != null && !targetReceiverId.trim().isEmpty()) {
+                intent.putExtra("target_receiver_id", targetReceiverId);
+            }
             
             // 添加额外数据
             if (extras != null) {

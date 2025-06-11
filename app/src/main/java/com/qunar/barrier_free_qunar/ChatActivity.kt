@@ -23,15 +23,17 @@ import android.database.ContentObserver
 
 import android.os.Handler
 import android.os.Looper
-import com.qunar.barrier_free_qunar.java.sdk.broadcast.ChatBroadcastReceiver
-import com.qunar.barrier_free_qunar.java.sdk.broadcast.BaseBroadcastReceiver
+import com.qunar.barrier_free_qunar.java.sdk.broadcast.BroadcastReceiver
+import com.qunar.barrier_free_qunar.java.sdk.model.broadcast.MessageData
+import com.qunar.barrier_free_qunar.kotlin.listener.ChatBroadcastListener
+import com.qunar.barrier_free_qunar.kotlin.listener.ChatUiBroadcastListener
+
 
 class ChatActivity : AppCompatActivity() {
     
 
     private lateinit var btnLog: ImageButton
     private lateinit var btnProfile: ImageButton
-    private lateinit var btnMarkdownTest: ImageButton
     private lateinit var tvTitle: TextView
     private lateinit var tvAccessibilityStatus: TextView
     private lateinit var rvMessages: RecyclerView
@@ -49,10 +51,23 @@ class ChatActivity : AppCompatActivity() {
     private lateinit var broadcastManager: BroadcastManager
     
     // 聊天广播接收器
-    private lateinit var chatBroadcastReceiver: ChatBroadcastReceiver
+    private lateinit var broadcastReceiver: BroadcastReceiver
+    
+    // 聊天广播监听器
+    private lateinit var chatBroadcastListener: ChatBroadcastListener
+
+    // UI控制器
+    private lateinit var chatUiBroadcastListener: ChatUiBroadcastListener
+    
+
+    
+
     
     // 广播接收器ID
     private val CHAT_RECEIVER_ID = "chat_activity_receiver"
+
+    // 处理UI广播接收器ID
+    private val CHAT_UI_RECEIVER_ID = "chat_activity_ui_receiver";
     
     // 消息去重：存储已处理的消息ID和内容哈希
     private val processedMessages = mutableSetOf<String>()
@@ -82,76 +97,32 @@ class ChatActivity : AppCompatActivity() {
     }
     
     /**
-     * 初始化广播管理器
+     * 初始化消息广播管理器
      */
     private fun initializeBroadcastManager() {
         try {
             // 获取广播管理器实例
             broadcastManager = BroadcastManager.getInstance(this)
             
-            // 创建聊天广播接收器
-            chatBroadcastReceiver = ChatBroadcastReceiver(object : ChatBroadcastReceiver.ChatBroadcastListener {
-                override fun onMessageReceived(messageData: BaseBroadcastReceiver.MessageData) {
-                    // 添加详细的调试日志
-                    Log.d("【ChatActivity】广播", "接收到消息: 类型=${messageData.messageType}, 发送者=${messageData.senderName}, 内容=${messageData.reply}")
-                    Log.d("【ChatActivity】广播", "多媒体数据: 图片=${messageData.imageData}, 视频=${messageData.videoData}, 音频=${messageData.audioData}, 类型=${messageData.multimediaType},multimediaData=${messageData.multimediaData}")
-                    
-                    // 检查消息是否为空或者是多媒体消息
-                    if (!messageData.reply.isNullOrEmpty() || messageData.hasMultimediaContent()) {
-                        // 消息去重检查
-                        val messageKey = generateMessageKey(messageData)
-                        if (processedMessages.contains(messageKey)) {
-                            Log.d("【ChatActivity】消息去重", "检测到重复消息，跳过处理: $messageKey")
-                            return
-                        }
-                        
-                        // 标记消息为已处理
-                        processedMessages.add(messageKey)
-                        
-                        removeThinkingMessage()
-                        // 在主线程中更新UI
-                        runOnUiThread {
-                            val conversationId = messageData.conversationId ?: ""
-                            val content = messageData.reply ?: ""
-                            
-                            // 如果有conversationId，尝试追加到现有消息
-                            if (conversationId.isNotEmpty() && content.isNotEmpty()) {
-                                val appended = chatAdapter.appendToMessageByConversationId(conversationId, content)
-                                if (appended) {
-                                    Log.d("【ChatActivity】消息追加", "成功追加到现有消息: conversationId=$conversationId")
-                                    // 滚动到最新消息
-                                    rvMessages.scrollToPosition(chatAdapter.itemCount - 1)
-                                    return@runOnUiThread
-                                }
-                            }
-                            
-                            // 如果没有找到现有消息，创建新消息
-                            displayMessage(
-                                messageData.originalMessage ?: "",
-                                messageData.reply ?: "",
-                                messageData.senderName ?: "未知",
-                                messageData.senderId ?: "unknown",
-                                messageData.timestamp,
-                                messageData.conversationId ?: "",
-                                messageData.messageType ?: BroadcastConst.MessageType.TEXT,
-                                messageData.imageData,
-                                messageData.videoData,
-                                messageData.audioData,
-                                messageData.multimediaType
-                            )
-                        }
-                    } else {
-                        Log.w("【ChatActivity】广播", "接收到空消息，忽略处理")
-                    }
-                }
-                
-                override fun onError(intent: Intent?, error: Exception) {
-                    Log.e("【ChatActivity】错误", "处理广播消息时出错: ${error.message}")
-                    error.printStackTrace()
-                }
-            })
+            // 创建聊天广播监听器
+            chatBroadcastListener = ChatBroadcastListener(
+                chatAdapter = chatAdapter,
+                rvMessages = rvMessages,
+                messages = messages,
+                processedMessages = processedMessages,
+                processedStreamChunks = processedStreamChunks,
+                onUIUpdate = { runOnUiThread { } }
+            )
+
+            chatUiBroadcastListener = ChatUiBroadcastListener(
+                chatAdapter = chatAdapter,
+                rvMessages = rvMessages
+            )
+
             
-            // Log.d("【ChatActivity】广播", "广播管理器初始化成功")
+            // 创建聊天广播接收器
+            broadcastReceiver = BroadcastReceiver(chatBroadcastListener)
+            
         } catch (e: Exception) {
             Log.e("【ChatActivity】错误", "初始化广播管理器失败: ${e.message}")
             e.printStackTrace()
@@ -166,15 +137,17 @@ class ChatActivity : AppCompatActivity() {
             // 注册聊天广播接收器
             val success = broadcastManager.registerReceiver(
                 CHAT_RECEIVER_ID,
-                chatBroadcastReceiver,
+                broadcastReceiver,
                 BroadcastConst.Action.SIMULATE_MESSAGE
             )
             
             if (success) {
-                // Log.d("【ChatActivity】广播", "广播接收器注册成功")
+                // Log.d("【ChatActivity】广播", "聊天广播接收器注册成功")
             } else {
-                Log.w("【ChatActivity】广播", "广播接收器注册失败")
+                Log.w("【ChatActivity】广播", "聊天广播接收器注册失败")
             }
+            
+
         } catch (e: Exception) {
              Log.e("【ChatActivity】错误", "注册广播接收器失败: ${e.message}")
              e.printStackTrace()
@@ -204,12 +177,15 @@ class ChatActivity : AppCompatActivity() {
         // 确保广播接收器被注销
         try {
             if (::broadcastManager.isInitialized) {
-                val success = broadcastManager.unregisterReceiver(CHAT_RECEIVER_ID)
-                if (success) {
-                    // Log.d("【ChatActivity】广播", "广播接收器注销成功")
+                // 注销聊天广播接收器
+                val chatSuccess = broadcastManager.unregisterReceiver(CHAT_RECEIVER_ID)
+                if (chatSuccess) {
+                    Log.d("【ChatActivity】广播", "聊天广播接收器注销成功")
                 } else {
-                    Log.w("【ChatActivity】广播", "广播接收器注销失败")
+                    Log.w("【ChatActivity】广播", "聊天广播接收器注销失败")
                 }
+                
+
             } else {
                 Log.w("【ChatActivity】广播", "广播管理器未初始化，无法注销接收器")
             }
@@ -234,13 +210,16 @@ class ChatActivity : AppCompatActivity() {
         Log.d("【ChatActivity】消息去重", "已清理所有消息缓存")
     }
     
+
+    
+
+    
     private fun initViews() {
         // Log.d("ChatActivity", "chat 界面开始初始化")
         try {
 
             btnLog = findViewById(R.id.btn_log)
             btnProfile = findViewById(R.id.btn_profile)
-            btnMarkdownTest = findViewById(R.id.btn_markdown_test)
             tvTitle = findViewById(R.id.tv_title)
             tvAccessibilityStatus = findViewById(R.id.tv_accessibility_status)
             rvMessages = findViewById(R.id.rv_messages)
@@ -291,18 +270,6 @@ class ChatActivity : AppCompatActivity() {
                Log.d("ChatActivity", "发送按钮被点击")
                 sendMessage()
             }
-            
-            btnMarkdownTest.setOnClickListener {
-                android.widget.Toast.makeText(this, "打开Markdown测试", android.widget.Toast.LENGTH_SHORT).show()
-                try {
-                    val intent = Intent(this, MarkdownTestActivity::class.java)
-                    startActivity(intent)
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                    android.widget.Toast.makeText(this, "无法打开Markdown测试页面: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
-                }
-            }
-
 
         } catch (e: Exception) {
             Log.e("ChatActivity", "设置点击监听器失败: ${e.message}")
@@ -352,7 +319,7 @@ class ChatActivity : AppCompatActivity() {
     /**
      * 生成消息唯一标识符用于去重
      */
-    private fun generateMessageKey(messageData: BaseBroadcastReceiver.MessageData): String {
+    private fun generateMessageKey(messageData: MessageData): String {
         return "${messageData.senderId}_${messageData.timestamp}_${messageData.reply?.hashCode()}_${messageData.conversationId}"
     }
     
@@ -415,7 +382,8 @@ class ChatActivity : AppCompatActivity() {
         imageData: String? = null,
         videoData: String? = null,
         audioData: String? = null,
-        multimediaType: String? = null
+        multimediaType: String? = null,
+        extras: Map<String, Any>? = null
     ) {
         try {
             // 根据消息类型处理不同的显示逻辑
@@ -482,11 +450,6 @@ class ChatActivity : AppCompatActivity() {
                 BroadcastConst.MessageType.AUDIO,
                 BroadcastConst.MessageType.MULTIMEDIA -> {
                     // 多媒体消息处理
-                    Log.d("【ChatActivity】多媒体", "开始处理多媒体消息: 类型=$messageType")
-                    Log.d("【ChatActivity】多媒体", "图片数据: $imageData")
-                    Log.d("【ChatActivity】多媒体", "视频数据: $videoData")
-                    Log.d("【ChatActivity】多媒体", "音频数据: $audioData")
-                    Log.d("【ChatActivity】多媒体", "多媒体类型: $multimediaType")
                     
                     val multimediaMessage = Message.createMultimediaMessage(
                         content = reply,
@@ -500,11 +463,8 @@ class ChatActivity : AppCompatActivity() {
                         messageType = messageType,
                         conversationId = conversationId
                     )
-                    
-                    Log.d("【ChatActivity】多媒体", "创建的消息对象: id=${multimediaMessage.id}, hasImage=${multimediaMessage.isImageMessage()}, imageData=${multimediaMessage.imageData}")
-                    
                     chatAdapter.addMessage(multimediaMessage)
-                    Log.d("【ChatActivity】多媒体", "多媒体消息已添加到适配器")
+
                 }
             }
             
@@ -627,16 +587,42 @@ class ChatActivity : AppCompatActivity() {
      * 检查无障碍服务是否已启用
      */
     private fun isAccessibilityServiceEnabled(): Boolean {
-        val accessibilityManager = getSystemService(Context.ACCESSIBILITY_SERVICE) as android.view.accessibility.AccessibilityManager
-        val enabledServices = android.provider.Settings.Secure.getString(
-            contentResolver,
-            android.provider.Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
-        )
-        
-        val packageName = packageName
-        val serviceName = "$packageName/.java.GlobalAccessibilityService"
-        
-        return enabledServices?.contains(serviceName) == true && accessibilityManager.isEnabled
+        try {
+            val accessibilityManager = getSystemService(Context.ACCESSIBILITY_SERVICE) as android.view.accessibility.AccessibilityManager
+            val enabledServices = android.provider.Settings.Secure.getString(
+                contentResolver,
+                android.provider.Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+            )
+            
+            val packageName = packageName
+            val serviceName = "$packageName/.java.GlobalAccessibilityService"
+            
+            // 添加调试日志
+            Log.d("ChatActivity", "检查无障碍服务状态:")
+            Log.d("ChatActivity", "包名: $packageName")
+            Log.d("ChatActivity", "服务名: $serviceName")
+            Log.d("ChatActivity", "已启用的服务: $enabledServices")
+            Log.d("ChatActivity", "无障碍管理器状态: ${accessibilityManager.isEnabled}")
+            
+            // 检查服务是否在启用列表中
+            val isServiceInList = enabledServices?.contains(serviceName) == true
+            Log.d("ChatActivity", "服务是否在列表中: $isServiceInList")
+            
+            // 额外检查：尝试通过GlobalAccessibilityService实例来验证
+            val serviceInstance = com.qunar.barrier_free_qunar.java.GlobalAccessibilityService.getInstance()
+            val isInstanceAvailable = serviceInstance != null
+            Log.d("ChatActivity", "服务实例是否可用: $isInstanceAvailable")
+            
+            // 综合判断：服务在列表中 AND 无障碍管理器启用
+            val isEnabled = isServiceInList && accessibilityManager.isEnabled
+            Log.d("ChatActivity", "最终判断结果: $isEnabled")
+            
+            return isEnabled
+        } catch (e: Exception) {
+            Log.e("ChatActivity", "检查无障碍服务状态时出错: ${e.message}")
+            e.printStackTrace()
+            return false
+        }
     }
     
     /**

@@ -16,7 +16,7 @@ public enum ActionType {
      * 滑动手势
      * 参数: 起始和结束坐标
      */
-    PERFORM_SWIPE_GESTURE("performSwipeGesture"),
+    scroll("scroll"),
     
     /**
      * 返回操作
@@ -48,7 +48,8 @@ public enum ActionType {
      * 输入文字
      * 参数type:("text")
      */
-    type("inputText"),
+    type("type"),
+
 
     /**
      * 未知动作类型

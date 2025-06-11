@@ -3,22 +3,21 @@ package com.qunar.barrier_free_qunar.java.service;
 
 import android.accessibilityservice.AccessibilityService;
 import android.annotation.SuppressLint;
-import android.os.SystemClock;
 import android.util.Log;
+
 
 
 import com.qunar.barrier_free_qunar.java.sdk.BarrierFreeBuilder;
 import com.qunar.barrier_free_qunar.java.sdk.action.ActionManager;
 import com.qunar.barrier_free_qunar.java.sdk.model.coordinate.ActionResult;
 import com.qunar.barrier_free_qunar.java.sdk.broadcast.BroadcastSender;
-import com.qunar.barrier_free_qunar.java.sdk.broadcast.model.MessageRequest;
+import com.qunar.barrier_free_qunar.java.sdk.model.broadcast.MessageRequest;
 import com.qunar.barrier_free_qunar.java.sdk.consts.URLConst;
 import com.qunar.barrier_free_qunar.java.sdk.gesture.GestureApi;
 import com.qunar.barrier_free_qunar.java.sdk.model.BarrierFreeException;
 import com.qunar.barrier_free_qunar.java.sdk.model.StreamEventData;
 import com.qunar.barrier_free_qunar.java.sdk.model.UserTask;
 import com.qunar.barrier_free_qunar.java.sdk.util.BFHttpUtils;
-import com.qunar.barrier_free_qunar.java.sdk.util.JsonUtil;
 import com.qunar.barrier_free_qunar.java.sdk.util.LlmUtil;
 import com.qunar.barrier_free_qunar.java.sdk.util.StreamEventParser;
 
@@ -85,6 +84,9 @@ public class UserTaskService {
 
             // 这里先执行一波返回主页
             gestureApi.home();
+            
+
+            
             for (; currentStep < limitStep; currentStep++) {
                 // 生成请求唯一标识，防止重复请求
                 String requestKey = sessionId + "_step_" + currentStep;
@@ -103,36 +105,27 @@ public class UserTaskService {
                 CountDownLatch stepLatch = new CountDownLatch(1);
                 AtomicBoolean stepCompleted = new AtomicBoolean(false);
                 AtomicBoolean isBroad = new AtomicBoolean(false);
-                Map<String, Object> requestBody = llmRequest.getRequestBody();
-
-                Log.d("【执行操作指令】", "requestBody：" + JsonUtil.toJson(requestBody));
-
 
                 // 截个屏幕给模型
                 String screenShotUrl = gestureApi.screenShot();
                 String nConversationId = UUID.randomUUID().toString().substring(0, 10);
                 sendMultimediaMessage("", screenShotUrl, userTask.getInstruction(), sessionId, nConversationId);
                 llmRequest.addUserImage(screenShotUrl);
+                Map<String, Object> requestBody = llmRequest.getRequestBody();
 
                 // 调用大LLM
                 BFHttpUtils.postObjectStream(URLConst.LLM_STREAM_URL, requestBody, headers, new BFHttpUtils.StreamCallback() {
                     private StringBuilder responseBuilder = new StringBuilder();
                     private String conversationId = "";
                     private StringBuilder finalContent = new StringBuilder();
-                    // 用于防止重复处理相同chunk的集合
-                    private final Set<String> processedChunks = ConcurrentHashMap.newKeySet();
-                    // 用于同步chunk处理的锁
-                    private final Object chunkLock = new Object();
+
 
                     @Override
                     public void onChunk(String chunk) {
-
-                        Log.d("【UserTaskService】", "接收消息：" + chunk);
-
                             responseBuilder.append(chunk);
                             // 使用StreamEventParser解析数据
                             StreamEventData eventDatum = StreamEventParser.parseChunk(chunk);
-                            if (eventDatum != null) {
+                            if (eventDatum != null && eventDatum.getEventType() != StreamEventData.EventType.UNKNOWN) {
                                 // 更新conversationId（如果有的话）
                                 if (eventDatum.getMessageId() != null && !eventDatum.getMessageId().isBlank()) {
                                     conversationId = eventDatum.getMessageId();
@@ -150,7 +143,6 @@ public class UserTaskService {
                     public void onComplete() {
                         // 使用CAS确保只执行一次
                         if (!stepCompleted.compareAndSet(false, true)) {
-                            Log.d("【UserTaskService】", "步骤已完成，忽略重复调用: " + requestKey);
                             return;
                         }
                         
@@ -160,24 +152,21 @@ public class UserTaskService {
                         synchronized (completeLock) {
                             // 检查是否已经完成过相同的任务
                             if (completedTasks.contains(taskKey)) {
-                                Log.d("【UserTaskService】", "任务已完成，跳过重复发送: " + taskKey);
                                 stepLatch.countDown();
                                 return;
                             }
                             
                             // 标记任务为已完成
                             completedTasks.add(taskKey);
-                            Log.d("【UserTaskService】", "开始处理任务: " + taskKey);
                         }
                         
                         try {
-                            SystemClock.sleep(4000);
+                            String executeStr = finalContent.toString();
+                            Log.i("【执行操作指令】",  executeStr);
                             // 解析并执行finalContent中的动作指令
-                            processActionCommands(finalContent.toString());
+                            processActionCommands(executeStr);
                             llmRequest.addAssistantMessage(finalContent.toString());
-                            Log.d("【UserTaskService】", "任务处理完成: " + taskKey);
                         } catch (Exception e) {
-                            Log.e("【UserTaskService】", "处理任务时发生异常: " + taskKey, e);
                             // 如果处理失败，从已完成集合中移除，允许重试
                             synchronized (completeLock) {
                                 completedTasks.remove(taskKey);
@@ -215,11 +204,10 @@ public class UserTaskService {
                     Thread.currentThread().interrupt();
                     break;
                 }
-                
-                SystemClock.sleep(6000);
             }
+            
 
-
+            
         } catch (BarrierFreeException bfe) {
             Log.w("【Barrier-Free】执行用户命令", "执行命令失败", bfe);
         } catch (Exception e) {
@@ -322,6 +310,7 @@ public class UserTaskService {
 
             // 创建多媒体消息请求
             MessageRequest multimediaRequest = new MessageRequest.Builder()
+                    .broadCastKey(MessageRequest.BroadCastListenerKey.CHAT_MESSAGE_BROAD_CAST)
                     .sendMode(MessageRequest.SendMode.SHORT_CONNECTION)
                     .messageType(MessageRequest.MessageType.MULTIMEDIA)
                     .senderRole(MessageRequest.SenderRole.SYSTEM)
@@ -333,11 +322,10 @@ public class UserTaskService {
 
             // 发送多媒体消息
             broadcastSender.send(multimediaRequest);
-            Log.d("【UserTaskService】", "发送多媒体消息成功，包含图片: " + imageUrl);
-
         } catch (Exception e) {
             Log.e("【UserTaskService】", "发送多媒体消息失败", e);
         }
     }
+    
 
 }

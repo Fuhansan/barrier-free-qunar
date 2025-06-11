@@ -1,6 +1,6 @@
 package com.qunar.barrier_free_qunar.java.sdk.broadcast.builder;
 
-import com.qunar.barrier_free_qunar.java.sdk.broadcast.model.MessageRequest;
+import com.qunar.barrier_free_qunar.java.sdk.model.broadcast.MessageRequest;
 import java.util.HashMap;
 import java.util.Map;
 

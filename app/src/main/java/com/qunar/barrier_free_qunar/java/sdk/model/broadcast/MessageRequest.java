@@ -1,4 +1,4 @@
-package com.qunar.barrier_free_qunar.java.sdk.broadcast.model;
+package com.qunar.barrier_free_qunar.java.sdk.model.broadcast;
 
 import java.util.Map;
 
@@ -7,7 +7,10 @@ import java.util.Map;
  * 用于封装所有发送消息所需的参数
  */
 public class MessageRequest {
-    
+
+    /** 发送广播key*/
+    private BroadCastListenerKey broadcastKey;
+
     /** 发送模式 */
     private SendMode sendMode;
     
@@ -34,6 +37,9 @@ public class MessageRequest {
 
     /** 会话ID，会话是多轮的包含多个消息 */
     private String sessionId;
+
+    /** 目标接收器ID，用于指定特定的广播接收器 */
+    private String targetReceiverId;
 
     
     // 构造函数
@@ -103,6 +109,14 @@ public class MessageRequest {
         this.sessionId = sessionId;
     }
 
+    public String getTargetReceiverId() {
+        return targetReceiverId;
+    }
+
+    public void setTargetReceiverId(String targetReceiverId) {
+        this.targetReceiverId = targetReceiverId;
+    }
+
     public MultimediaData getMultimediaData() {
         return multimediaData;
     }
@@ -118,7 +132,15 @@ public class MessageRequest {
     public void setExtraParams(Map<String, Object> extraParams) {
         this.extraParams = extraParams;
     }
-    
+
+    public BroadCastListenerKey getBroadcastKey() {
+        return broadcastKey;
+    }
+
+    public void setBroadcastKey(BroadCastListenerKey broadcastKey) {
+        this.broadcastKey = broadcastKey;
+    }
+
     /**
      * 发送模式枚举
      */
@@ -147,6 +169,13 @@ public class MessageRequest {
         USER,
         /** 系统/AI助手 */
         SYSTEM
+    }
+
+
+
+    public enum BroadCastListenerKey {
+       CHAT_MESSAGE_BROAD_CAST,
+        CHAT_UI_BROAD_CAST
     }
     
     /**
@@ -235,8 +264,18 @@ public class MessageRequest {
             return this;
         }
         
+        public Builder targetReceiverId(String targetReceiverId) {
+            request.setTargetReceiverId(targetReceiverId);
+            return this;
+        }
+        
         public Builder extraParams(Map<String, Object> extraParams) {
             request.setExtraParams(extraParams);
+            return this;
+        }
+
+        public Builder broadCastKey(BroadCastListenerKey broadcastKey){
+            request.setBroadcastKey(broadcastKey);
             return this;
         }
         

@@ -2,7 +2,7 @@ package com.qunar.barrier_free_qunar.java.sdk.broadcast.sender;
 
 import android.util.Log;
 import com.qunar.barrier_free_qunar.java.sdk.broadcast.BroadcastManager;
-import com.qunar.barrier_free_qunar.java.sdk.broadcast.model.MessageRequest;
+import com.qunar.barrier_free_qunar.java.sdk.model.broadcast.MessageRequest;
 import com.qunar.barrier_free_qunar.java.sdk.consts.BroadcastConst;
 import java.util.HashMap;
 import java.util.Map;
@@ -68,12 +68,11 @@ public class ShortConnectionMessageSender extends MessageSender {
         // 发送消息
         boolean success = broadcastManager.sendBroadcast(
             getActionByRole(request.getSenderRole()), 
-            extras
+            extras,
+            request.getTargetReceiverId()
         );
         
-        if (success) {
-            Log.d(TAG, "短链接文字消息发送成功");
-        } else {
+        if (!success) {
             Log.e(TAG, "短链接文字消息发送失败");
         }
         
@@ -96,12 +95,11 @@ public class ShortConnectionMessageSender extends MessageSender {
         // 发送消息
         boolean success = broadcastManager.sendBroadcast(
             getActionByRole(request.getSenderRole()), 
-            extras
+            extras,
+            request.getTargetReceiverId()
         );
         
-        if (success) {
-            Log.d(TAG, "短链接多媒体消息发送成功");
-        } else {
+        if (!success) {
             Log.e(TAG, "短链接多媒体消息发送失败");
         }
         
@@ -113,8 +111,8 @@ public class ShortConnectionMessageSender extends MessageSender {
      */
     private Map<String, Object> buildTextExtras(MessageRequest request, String content) {
         Map<String, Object> extras = new HashMap<>();
-        
         // 基础信息
+        extras.put(BroadcastConst.Extra.BROADCAST_PRIMARY_KEY, request.getBroadcastKey());
         extras.put(BroadcastConst.Extra.ORIGINAL_MESSAGE, request.getOriginalMessage() != null ? request.getOriginalMessage() : "");
         extras.put(BroadcastConst.Extra.REPLY, content);
         extras.put(BroadcastConst.Extra.CONVERSATION_ID, request.getConversationId() != null ? request.getConversationId() : "");
@@ -130,8 +128,14 @@ public class ShortConnectionMessageSender extends MessageSender {
             extras.put(BroadcastConst.Extra.SENDER_ID, BroadcastConst.SenderId.AI_ASSISTANT);
         }
         
-        // 消息类型
-        extras.put(BroadcastConst.Extra.MESSAGE_TYPE, "text");
+        // 消息类型 - 根据发送者角色和额外参数判断
+        String messageType = "text";
+        if (request.getSenderRole() == MessageRequest.SenderRole.SYSTEM && 
+            request.getExtraParams() != null && 
+            request.getExtraParams().containsKey("action")) {
+            messageType = "system";
+        }
+        extras.put(BroadcastConst.Extra.MESSAGE_TYPE, messageType);
         extras.put("is_streaming", false);
         extras.put("content_length", content.length());
         
@@ -151,6 +155,7 @@ public class ShortConnectionMessageSender extends MessageSender {
         MessageRequest.MultimediaData multimediaData = request.getMultimediaData();
         
         // 基础信息
+        extras.put(BroadcastConst.Extra.BROADCAST_PRIMARY_KEY, request.getBroadcastKey());
         extras.put(BroadcastConst.Extra.ORIGINAL_MESSAGE, request.getOriginalMessage() != null ? request.getOriginalMessage() : "");
         extras.put(BroadcastConst.Extra.CONVERSATION_ID, request.getConversationId() != null ? request.getConversationId() : "");
         extras.put(BroadcastConst.Extra.TIMESTAMP, System.currentTimeMillis());
@@ -176,24 +181,17 @@ public class ShortConnectionMessageSender extends MessageSender {
         }
         
         // 多媒体数据
-        Log.d(TAG, "多媒体数据检查: 图片=" + multimediaData.getImageData() + ", 视频=" + multimediaData.getVideoData() + ", 音频=" + multimediaData.getAudioData());
-        
         if (multimediaData.getAudioData() != null) {
             extras.put(BroadcastConst.Extra.AUDIO_DATA, multimediaData.getAudioData());
             extras.put("has_audio", true);
-            Log.d(TAG, "添加音频数据到广播");
         }
         if (multimediaData.getVideoData() != null) {
             extras.put(BroadcastConst.Extra.VIDEO_DATA, multimediaData.getVideoData());
             extras.put("has_video", true);
-            Log.d(TAG, "添加视频数据到广播");
         }
         if (multimediaData.getImageData() != null) {
             extras.put(BroadcastConst.Extra.IMAGE_DATA, multimediaData.getImageData());
             extras.put("has_image", true);
-            Log.d(TAG, "添加图片数据到广播: " + multimediaData.getImageData());
-        } else {
-            Log.w(TAG, "图片数据为空，无法添加到广播");
         }
         
         // 设置多媒体数据的JSON字符串（如果需要）

@@ -1,6 +1,7 @@
 package com.qunar.barrier_free_qunar.java.sdk.ui;
 
 import android.accessibilityservice.AccessibilityService;
+import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.Intent;
 import android.graphics.PixelFormat;
@@ -232,6 +233,7 @@ public class FloatingButtonService {
     /**
      * 创建现代化菜单按钮
      */
+    @SuppressLint("ClickableViewAccessibility")
     private LinearLayout createMenuButton(String text, int iconRes) {
         LinearLayout button = new LinearLayout(accessibilityService);
         button.setOrientation(LinearLayout.HORIZONTAL);

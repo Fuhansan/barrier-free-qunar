@@ -64,6 +64,22 @@ public class DefaultActionParser implements ActionParser {
         Pattern.CASE_INSENSITIVE
     );
     
+    // 专门用于解析SCROLL动作的参数模式
+    private static final Pattern SCROLL_START_BOX_PATTERN = Pattern.compile(
+        "start_box\\s*=\\s*['\"]([^'\"]*)['\"]?",
+        Pattern.CASE_INSENSITIVE
+    );
+    
+    private static final Pattern SCROLL_END_BOX_PATTERN = Pattern.compile(
+        "end_box\\s*=\\s*['\"]([^'\"]*)['\"]?",
+        Pattern.CASE_INSENSITIVE
+    );
+    
+    private static final Pattern SCROLL_DIRECTION_PATTERN = Pattern.compile(
+        "direction\\s*=\\s*['\"]([^'\"]*)['\"]?",
+        Pattern.CASE_INSENSITIVE
+    );
+    
     @Override
     public List<ActionCommand> parseActions(String content) {
         List<ActionCommand> commands = new ArrayList<>();
@@ -90,10 +106,7 @@ public class DefaultActionParser implements ActionParser {
                 Map<String, String> parameters = parseParametersForAction(actionType, paramString);
                 ActionCommand command = new ActionCommand(actionType, parameters, originalText);
                 commands.add(command);
-                
-                Log.d(TAG, "成功解析动作指令: " + command);
-            } else {
-                Log.w(TAG, "未知的动作类型: " + actionName);
+                Log.i(TAG, "成功解析动作指令: " + command);
             }
         }
         
@@ -114,6 +127,7 @@ public class DefaultActionParser implements ActionParser {
             ActionType actionType = ActionType.fromActionName(actionName);
             
             if (actionType != ActionType.UNKNOWN) {
+                Log.d(TAG, "解析动作完成，未知指令： " + actionName);
                 return true;
             }
         }
@@ -144,8 +158,8 @@ public class DefaultActionParser implements ActionParser {
             case CLICK:
                 parseClickParameters(paramString, parameters);
                 break;
-            case PERFORM_SWIPE_GESTURE:
-                parseSwipeParameters(paramString, parameters);
+            case scroll:
+                parseScrollParameters(paramString, parameters);
                 break;
             case type:
                 parseInputTextParameters(paramString, parameters);
@@ -199,33 +213,7 @@ public class DefaultActionParser implements ActionParser {
         }
     }
     
-    /**
-     * 解析PERFORM_SWIPE_GESTURE动作的参数
-     */
-    private void parseSwipeParameters(String paramString, Map<String, String> parameters) {
-        Matcher fromMatcher = SWIPE_FROM_PATTERN.matcher(paramString);
-        Matcher toMatcher = SWIPE_TO_PATTERN.matcher(paramString);
-        
-        if (fromMatcher.find()) {
-            String from = fromMatcher.group(1);
-            if (from != null) {
-                parameters.put("from", from.trim());
-                Log.d(TAG, "解析SWIPE参数: from = " + from);
-            }
-        }
-        
-        if (toMatcher.find()) {
-            String to = toMatcher.group(1);
-            if (to != null) {
-                parameters.put("to", to.trim());
-                Log.d(TAG, "解析SWIPE参数: to = " + to);
-            }
-        }
-        
-        if (!fromMatcher.find() && !toMatcher.find()) {
-            Log.w(TAG, "PERFORM_SWIPE_GESTURE动作参数解析失败: " + paramString);
-        }
-    }
+
     
     /**
      * 解析INPUT_TEXT动作的参数
@@ -240,6 +228,48 @@ public class DefaultActionParser implements ActionParser {
             }
         } else {
             Log.w(TAG, "INPUT_TEXT动作参数解析失败: " + paramString);
+        }
+    }
+    
+    /**
+     * 解析SCROLL动作的参数
+     */
+    private void parseScrollParameters(String paramString, Map<String, String> parameters) {
+        Matcher startBoxMatcher = SCROLL_START_BOX_PATTERN.matcher(paramString);
+        Matcher endBoxMatcher = SCROLL_END_BOX_PATTERN.matcher(paramString);
+        Matcher directionMatcher = SCROLL_DIRECTION_PATTERN.matcher(paramString);
+        
+        boolean hasValidParams = false;
+        
+        if (startBoxMatcher.find()) {
+            String startBox = startBoxMatcher.group(1);
+            if (startBox != null) {
+                parameters.put("start_box", startBox.trim());
+                Log.d(TAG, "解析SCROLL参数: start_box = " + startBox);
+                hasValidParams = true;
+            }
+        }
+        
+        if (endBoxMatcher.find()) {
+            String endBox = endBoxMatcher.group(1);
+            if (endBox != null) {
+                parameters.put("end_box", endBox.trim());
+                Log.d(TAG, "解析SCROLL参数: end_box = " + endBox);
+                hasValidParams = true;
+            }
+        }
+        
+        if (directionMatcher.find()) {
+            String direction = directionMatcher.group(1);
+            if (direction != null) {
+                parameters.put("direction", direction.trim());
+                Log.d(TAG, "解析SCROLL参数: direction = " + direction);
+                hasValidParams = true;
+            }
+        }
+        
+        if (!hasValidParams) {
+            Log.w(TAG, "SCROLL动作参数解析失败: " + paramString);
         }
     }
     

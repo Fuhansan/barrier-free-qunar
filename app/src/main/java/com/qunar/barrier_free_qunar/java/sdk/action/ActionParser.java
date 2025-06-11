@@ -19,7 +19,7 @@ public interface ActionParser {
     List<ActionCommand> parseActions(String content);
     
     /**
-     * 检查文本内容是否包含动作指令
+     * 检查文本内容是否包含动作指令open_app
      * 
      * @param content 待检查的文本内容
      * @return 是否包含动作指令

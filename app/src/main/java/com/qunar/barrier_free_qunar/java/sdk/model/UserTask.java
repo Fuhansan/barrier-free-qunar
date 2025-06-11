@@ -32,7 +32,7 @@ public class UserTask {
 
     public UserTask(String instruction) {
         this.status = false;
-        this.limitStep = 5;
+        this.limitStep = 15;
         this.currentStep = 0;
         this.instruction = instruction;
     }
@@ -40,7 +40,7 @@ public class UserTask {
     public UserTask(String instruction, String through) {
         this.instruction = instruction;
         this.through = through;
-        this.limitStep = 5;
+        this.limitStep = 15;
         this.currentStep = 0;
     }
 

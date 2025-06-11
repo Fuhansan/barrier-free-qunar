@@ -123,10 +123,8 @@ class ChatAdapter(private val messages: MutableList<Message>) :
     override fun getItemCount(): Int = messages.size
     
     fun addMessage(message: Message) {
-        Log.d("【ChatAdapter】添加消息", "消息类型: ${message.messageType}, 是否图片: ${message.isImageMessage()}, 图片数据: ${message.imageData}")
         messages.add(message)
         notifyItemInserted(messages.size - 1)
-        Log.d("【ChatAdapter】添加消息", "消息已添加，当前消息总数: ${messages.size}")
     }
     
     fun updateMessage(position: Int, message: Message) {
@@ -167,11 +165,8 @@ class ChatAdapter(private val messages: MutableList<Message>) :
     }
 
     fun appendToMessageWithEffect(position: Int, additionalContent: String) {
-        Log.d("【ChatAdapter】流式追加", "appendToMessageWithEffect: position=$position, content='$additionalContent', 消息总数=${messages.size}")
-        
         // 检查参数有效性
         if (additionalContent.isEmpty()) {
-            Log.d("【ChatAdapter】流式追加", "additionalContent为空，跳过处理")
             return
         }
         
@@ -187,16 +182,12 @@ class ChatAdapter(private val messages: MutableList<Message>) :
                 isStreamCompleted = false // 流式追加时标记为未完成
             )
             messages[position] = updatedMessage
-            Log.d("【ChatAdapter】流式追加", "更新消息内容: '${existingMessage.content}' -> '${updatedMessage.content}'")
-            
+
             // 获取对应的ViewHolder并应用打字机效果
             val viewHolder = getCurrentViewHolder(position)
-            Log.d("【ChatAdapter】流式追加", "获取到的ViewHolder类型: ${viewHolder?.javaClass?.simpleName}")
             if (viewHolder is ReceivedMessageViewHolder) {
-                Log.d("【ChatAdapter】流式追加", "调用appendTextWithEffect: '$additionalContent'")
                 viewHolder.appendTextWithEffect(additionalContent)
             } else {
-                Log.d("【ChatAdapter】流式追加", "ViewHolder不是ReceivedMessageViewHolder，使用notifyItemChanged")
                 notifyItemChanged(position)
             }
         } catch (e: Exception) {

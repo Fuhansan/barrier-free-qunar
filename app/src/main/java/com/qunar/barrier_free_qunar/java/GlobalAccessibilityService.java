@@ -8,14 +8,11 @@ import android.accessibilityservice.AccessibilityService;
 import android.accessibilityservice.AccessibilityServiceInfo;
 
 
-import com.qunar.barrier_free_qunar.java.sdk.BarrierFreeBuilder;
+import com.qunar.barrier_free_qunar.java.sdk.consts.BroadcastConst;
 import com.qunar.barrier_free_qunar.java.sdk.consts.URLConst;
-import com.qunar.barrier_free_qunar.java.sdk.gesture.GestureApi;
-import com.qunar.barrier_free_qunar.java.sdk.model.UserTask;
-import com.qunar.barrier_free_qunar.java.sdk.model.http.HttpResult;
 import com.qunar.barrier_free_qunar.java.sdk.util.BFHttpUtils;
 import com.qunar.barrier_free_qunar.java.sdk.broadcast.BroadcastSender;
-import com.qunar.barrier_free_qunar.java.sdk.broadcast.model.MessageRequest;
+import com.qunar.barrier_free_qunar.java.sdk.model.broadcast.MessageRequest;
 import com.qunar.barrier_free_qunar.java.service.UserTaskControl;
 import com.qunar.barrier_free_qunar.java.service.UserTaskService;
 import com.qunar.barrier_free_qunar.LogCollector;
@@ -25,7 +22,6 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicReference;
 
 import com.qunar.barrier_free_qunar.java.sdk.model.StreamEventData;
 import com.qunar.barrier_free_qunar.java.sdk.util.StreamEventParser;
@@ -33,6 +29,7 @@ import com.qunar.barrier_free_qunar.java.sdk.ui.FloatingButtonService;
 import com.qunar.barrier_free_qunar.java.sdk.ui.AppStateMonitor;
 import com.qunar.barrier_free_qunar.java.sdk.ui.ActivityStateMonitor;
 import com.qunar.barrier_free_qunar.java.sdk.ui.FloatingButtonDebugHelper;
+
 import android.app.Application;
 
 public class GlobalAccessibilityService extends AccessibilityService {
@@ -50,6 +47,7 @@ public class GlobalAccessibilityService extends AccessibilityService {
 
     /**
      * 获取GlobalAccessibilityService的实例
+     *
      * @return 当前运行的服务实例，如果服务未运行则返回null
      */
     public static GlobalAccessibilityService getInstance() {
@@ -61,13 +59,15 @@ public class GlobalAccessibilityService extends AccessibilityService {
         instance = this;
         super.onServiceConnected();
         AccessibilityServiceInfo info = new AccessibilityServiceInfo();
-        // 只监听点击事件，避免过多事件导致卡顿
-        info.eventTypes = AccessibilityEvent.TYPE_VIEW_CLICKED;
+        // 监听点击事件和窗口状态变化事件，用于检测应用切换
+        info.eventTypes = AccessibilityEvent.TYPE_VIEW_CLICKED |
+                AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED;
         info.feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC;
         // 添加必要的flags以获取完整的节点信息
         info.flags = AccessibilityServiceInfo.FLAG_INCLUDE_NOT_IMPORTANT_VIEWS |
                 AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS |
                 AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS;
+
         info.packageNames = new String[]{getPackageName()};
         info.notificationTimeout = 100; // 增加超时时间，减少频繁触发
         setServiceInfo(info);
@@ -83,26 +83,14 @@ public class GlobalAccessibilityService extends AccessibilityService {
         activityStateMonitor.setListener(new ActivityStateMonitor.AppStateListener() {
             @Override
             public void onAppBecomeVisible() {
-                // 应用界面变为可见，隐藏悬浮按钮
-                logCollector.i(TAG, "应用界面变为可见");
-                if (floatingButtonService != null) {
-                    floatingButtonService.hideFloatingButton();
-                    logCollector.i(TAG, "应用界面可见，隐藏悬浮按钮");
-                } else {
-                    logCollector.w(TAG, "FloatingButtonService为空，无法隐藏悬浮按钮");
-                }
+                // 应用界面变为可见，仅记录日志，不控制悬浮按钮（由窗口状态变化事件处理）
+                logCollector.i(TAG, "应用界面变为可见（Activity生命周期）");
             }
 
             @Override
             public void onAppBecomeInvisible() {
-                // 应用界面变为不可见，显示悬浮按钮
-                logCollector.i(TAG, "应用界面变为不可见");
-                if (floatingButtonService != null) {
-                    floatingButtonService.showFloatingButton();
-                    logCollector.i(TAG, "应用界面不可见，显示悬浮按钮");
-                } else {
-                    logCollector.w(TAG, "FloatingButtonService为空，无法显示悬浮按钮");
-                }
+                // 应用界面变为不可见，仅记录日志，不控制悬浮按钮（由窗口状态变化事件处理）
+                logCollector.i(TAG, "应用界面变为不可见（Activity生命周期）");
             }
         });
 
@@ -132,30 +120,9 @@ public class GlobalAccessibilityService extends AccessibilityService {
         // 开始监听应用状态
         appStateMonitor.startMonitoring();
 
-        // 延迟3秒后进行调试检查，但不立即显示悬浮按钮
-        new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
-            // 进行完整的调试检查
-            FloatingButtonDebugHelper.debugFloatingButton(this, floatingButtonService, appStateMonitor);
+        FloatingButtonDebugHelper.debugFloatingButton(this, floatingButtonService, appStateMonitor);
+        floatingButtonService.showFloatingButton();
 
-            // 检查权限
-            if (!FloatingButtonDebugHelper.checkOverlayPermission(this)) {
-                logCollector.e(TAG, "缺少悬浮窗权限，无法显示悬浮按钮");
-                return;
-            }
-
-            // 记录当前状态但不立即显示悬浮按钮
-            if (floatingButtonService != null && activityStateMonitor != null) {
-                boolean isAppVisible = activityStateMonitor.isAppVisible();
-                logCollector.i(TAG, "服务启动时Activity状态检查 - " + activityStateMonitor.getStateInfo());
-                logCollector.i(TAG, "悬浮按钮将在应用切换到后台时自动显示");
-            } else {
-                logCollector.e(TAG, "FloatingButtonService或ActivityStateMonitor未初始化");
-            }
-        }, 3000);
-
-        logCollector.i(TAG, "无障碍服务已连接，包名: " + getPackageName());
-        logCollector.i(TAG, "会话ID已生成: " + currentSessionId);
-        logCollector.i(TAG, "悬浮按钮服务已初始化");
     }
 
 
@@ -177,8 +144,12 @@ public class GlobalAccessibilityService extends AccessibilityService {
             return;
         }
 
+        // 处理窗口状态变化事件，用于检测应用切换
+        if (event.getEventType() == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+            handleWindowStateChanged(event);
+        }
 
-        // 只处理点击事件
+        // 处理点击事件
         if (event.getEventType() == AccessibilityEvent.TYPE_VIEW_CLICKED) {
             AccessibilityNodeInfo source = event.getSource();
             if (source != null) {
@@ -197,7 +168,7 @@ public class GlobalAccessibilityService extends AccessibilityService {
                         if (userMessage != null && !userMessage.trim().isBlank()) {
                             logCollector.i(TAG, "获取到用户输入: " + userMessage);
                             // 调用HTTP接口处理用户消息
-                             sendMessageToAPI(userMessage, "");
+                            sendMessageToAPI(userMessage, "");
                         }
                     }
                 } catch (Exception e) {
@@ -206,6 +177,43 @@ public class GlobalAccessibilityService extends AccessibilityService {
                     source.recycle();
                 }
             }
+        }
+    }
+
+    /**
+     * 处理窗口状态变化事件
+     * 用于检测用户是否切换到其他应用
+     */
+    private String lastPackageName = "";
+    private long lastEventTime = 0;
+    private static final long EVENT_DEBOUNCE_TIME = 500; // 500ms防抖
+
+    private void handleWindowStateChanged(AccessibilityEvent event) {
+        try {
+            CharSequence packageName = event.getPackageName();
+            if (packageName != null) {
+                String currentPackage = packageName.toString();
+                String myPackage = getPackageName();
+                long currentTime = System.currentTimeMillis();
+
+                // 防抖：如果是相同包名且时间间隔太短，则忽略
+                if (currentPackage.equals(lastPackageName) &&
+                        (currentTime - lastEventTime) < EVENT_DEBOUNCE_TIME) {
+                    return;
+                }
+
+                lastPackageName = currentPackage;
+                lastEventTime = currentTime;
+
+                // 忽略系统UI相关的包名
+                if (currentPackage.contains("systemui") ||
+                        currentPackage.contains("android.system") ||
+                        currentPackage.equals("android")) {
+                    return;
+                }
+            }
+        } catch (Exception e) {
+            logCollector.e(TAG, "处理窗口状态变化时出错", e);
         }
     }
 
@@ -248,7 +256,7 @@ public class GlobalAccessibilityService extends AccessibilityService {
             }
 
             // 递归查找子节点
-            for (int i = 0; i < node.getChildCount() ; i++) {
+            for (int i = 0; i < node.getChildCount(); i++) {
                 AccessibilityNodeInfo child = node.getChild(i);
                 if (child != null) {
                     String result = findLastUserMessage(child);
@@ -427,8 +435,6 @@ public class GlobalAccessibilityService extends AccessibilityService {
     }
 
 
-
-
     /**
      * 发送消息到API
      *
@@ -471,44 +477,42 @@ public class GlobalAccessibilityService extends AccessibilityService {
 
                 StreamEventParser.resetState();
                 final StreamEventData.AgentType[] instructExt = {null};
-                    // 使用流式POST请求
+                // 使用流式POST请求
                 BFHttpUtils.postObjectStream(URLConst.LLM_STREAM_URL, requestBody, headers, new BFHttpUtils.StreamCallback() {
-                        private StringBuilder responseBuilder = new StringBuilder();
+                    private StringBuilder responseBuilder = new StringBuilder();
 
-                        @Override
-                        public void onChunk(String chunk) {
-                            logCollector.d(TAG, "接收到新的响应片段: " + chunk);
-                            // 使用StreamEventParser解析数据
-                            StreamEventData  eventDatum = StreamEventParser.parseChunk(chunk);
-
-                            if (eventDatum != null) {
-                                logCollector.d(TAG, "解析成功，事件类型: " + eventDatum.getEventType());
-                                if(instructExt[0] == null || instructExt[0] != StreamEventData.AgentType.INSTRUCT_EXTRACTOR){
-                                    instructExt[0] = eventDatum.getCurrConvAgentType();
-                                }
-
-                                String sendContent = broadcastSender.handleStreamEvent(eventDatum, userMessage, currentSessionId, isBroadcastingStarted);
-                                responseBuilder.append(sendContent);
+                    @Override
+                    public void onChunk(String chunk) {
+                        // 使用StreamEventParser解析数据
+                        StreamEventData eventDatum = StreamEventParser.parseChunk(chunk);
+                        if (eventDatum != null) {
+                            if (instructExt[0] == null || instructExt[0] != StreamEventData.AgentType.INSTRUCT_EXTRACTOR) {
+                                instructExt[0] = eventDatum.getCurrConvAgentType();
                             }
-                        }
 
-                        @Override
-                        public void onComplete() {
-                            StreamEventData.AgentType agentType = instructExt[0];
-                            logCollector.d(TAG, "接收数据完成: " + agentType + "数据：" + responseBuilder.toString());
-                            // 这里判断AgentType是不是到了INSTRUCT_EXTRACTOR
-                            if (agentType == StreamEventData.AgentType.INSTRUCT_EXTRACTOR) {
-                                // 这里需要去执行operator的任务
-                                userTaskService.run(UserTaskControl.build(userMessage, responseBuilder.toString()));
-                            }
+                            String sendContent = broadcastSender.handleStreamEvent(eventDatum, userMessage, currentSessionId, isBroadcastingStarted);
+                            responseBuilder.append(sendContent);
                         }
-                        
-                        @Override
-                        public void onError(String error) {
-                            logCollector.e(TAG, "流式请求失败: " + error);
-                            currentSessionId = UUID.randomUUID().toString().substring(0, 20);
-                            // 发送错误消息广播
-                            MessageRequest errorRequest = new MessageRequest.Builder()
+                    }
+
+                    @Override
+                    public void onComplete() {
+                        StreamEventData.AgentType agentType = instructExt[0];
+                        logCollector.i(TAG, "接收数据完成: " + agentType + "接下来需要执行的指令：" + responseBuilder.toString());
+                        // 这里判断AgentType是不是到了INSTRUCT_EXTRACTOR
+                        if (agentType == StreamEventData.AgentType.INSTRUCT_EXTRACTOR) {
+                            // 这里需要去执行operator的任务
+                            userTaskService.run(UserTaskControl.build(userMessage, responseBuilder.toString()));
+                        }
+                    }
+
+                    @Override
+                    public void onError(String error) {
+                        logCollector.e(TAG, "流式请求失败: " + error);
+                        currentSessionId = UUID.randomUUID().toString().substring(0, 20);
+                        // 发送错误消息广播
+                        MessageRequest errorRequest = new MessageRequest.Builder()
+                                .broadCastKey(MessageRequest.BroadCastListenerKey.CHAT_MESSAGE_BROAD_CAST)
                                 .sendMode(MessageRequest.SendMode.STREAMING)
                                 .messageType(MessageRequest.MessageType.TEXT)
                                 .senderRole(MessageRequest.SenderRole.SYSTEM)
@@ -516,8 +520,8 @@ public class GlobalAccessibilityService extends AccessibilityService {
                                 .originalMessage(userMessage)
                                 .conversationId(currentSessionId)
                                 .build();
-                            broadcastSender.send(errorRequest);
-                        }
+                        broadcastSender.send(errorRequest);
+                    }
                 });
 
 
@@ -525,13 +529,14 @@ public class GlobalAccessibilityService extends AccessibilityService {
                 logCollector.e(TAG, "发送消息到API时出错: " + e.getMessage(), e);
                 // 发送错误消息广播
                 MessageRequest errorRequest = new MessageRequest.Builder()
-                    .sendMode(MessageRequest.SendMode.SHORT_CONNECTION)
-                    .messageType(MessageRequest.MessageType.TEXT)
-                    .senderRole(MessageRequest.SenderRole.SYSTEM)
-                    .content("抱歉，网络请求失败。请检查网络连接后重试。")
-                    .originalMessage(userMessage)
-                    .conversationId(currentSessionId)
-                    .build();
+                        .broadCastKey(MessageRequest.BroadCastListenerKey.CHAT_MESSAGE_BROAD_CAST)
+                        .sendMode(MessageRequest.SendMode.SHORT_CONNECTION)
+                        .messageType(MessageRequest.MessageType.TEXT)
+                        .senderRole(MessageRequest.SenderRole.SYSTEM)
+                        .content("抱歉，网络请求失败。请检查网络连接后重试。")
+                        .originalMessage(userMessage)
+                        .conversationId(currentSessionId)
+                        .build();
                 broadcastSender.send(errorRequest);
             }
         }).start();
@@ -549,7 +554,7 @@ public class GlobalAccessibilityService extends AccessibilityService {
         super.onDestroy();
         instance = null;
         logCollector.i(TAG, "无障碍服务销毁");
-        
+
         // 取消注册Activity生命周期监听器
         if (activityStateMonitor != null) {
             try {
@@ -560,12 +565,12 @@ public class GlobalAccessibilityService extends AccessibilityService {
                 logCollector.e(TAG, "取消注册Activity状态监听器失败", e);
             }
         }
-        
+
         // 停止应用状态监听
         if (appStateMonitor != null) {
             appStateMonitor.stopMonitoring();
         }
-        
+
         // 隐藏悬浮按钮
         if (floatingButtonService != null) {
             floatingButtonService.hideFloatingButton();
@@ -578,19 +583,19 @@ public class GlobalAccessibilityService extends AccessibilityService {
         if (logCollector != null) {
             logCollector.i(TAG, "无障碍服务已断开连接");
         }
-        
+
         // 清理悬浮按钮服务
         if (floatingButtonService != null) {
             floatingButtonService.destroy();
             floatingButtonService = null;
         }
-        
+
         // 清理应用状态监听器
         if (appStateMonitor != null) {
             appStateMonitor.destroy();
             appStateMonitor = null;
         }
-        
+
         return super.onUnbind(intent);
     }
 
@@ -608,7 +613,6 @@ public class GlobalAccessibilityService extends AccessibilityService {
         currentSessionId = "session_" + System.currentTimeMillis();
         // Log.d("【无障碍服务】", "当前会话ID: " + currentSessionId);
     }
-
 
 
 }

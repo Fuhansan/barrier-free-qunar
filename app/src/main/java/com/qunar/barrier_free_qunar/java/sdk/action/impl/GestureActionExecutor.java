@@ -45,8 +45,8 @@ public class GestureActionExecutor implements ActionExecutor {
             switch (command.getActionType()) {
                 case CLICK:
                     return executeClick(command);
-                case PERFORM_SWIPE_GESTURE:
-                    return executeSwipe(command);
+                case scroll:
+                    return executeScroll(command);
                 case BACK:
                     return executeBack(command);
                 case HOME:
@@ -76,7 +76,7 @@ public class GestureActionExecutor implements ActionExecutor {
         
         ActionType actionType = command.getActionType();
         return actionType == ActionType.CLICK ||
-               actionType == ActionType.PERFORM_SWIPE_GESTURE ||
+               actionType == ActionType.scroll ||
                actionType == ActionType.BACK ||
                actionType == ActionType.HOME ||
                actionType == ActionType.SCREENSHOT ||
@@ -126,7 +126,7 @@ public class GestureActionExecutor implements ActionExecutor {
         }
         
         SlidPoint slidPoint = new SlidPoint(fromPoint, toPoint);
-        boolean success = gestureApi.slider(slidPoint);
+        boolean success = gestureApi.scroll(slidPoint);
         
         if (success) {
             return ActionResult.success("滑动操作执行成功: " + fromPoint + " -> " + toPoint);
@@ -192,6 +192,43 @@ public class GestureActionExecutor implements ActionExecutor {
         // 临时返回成功，实际实现需要根据GestureApi的具体方法
         return ActionResult.success("输入文本操作执行成功: " + text);
     }
+    
+    /**
+     * 执行滚动操作
+     */
+    private ActionResult executeScroll(ActionCommand command) {
+        String startBox = command.getParameter("start_box");
+        String endBox = command.getParameter("end_box");
+        
+        if (startBox == null || startBox.trim().isEmpty()) {
+            return ActionResult.failure("滚动操作缺少start_box参数");
+        }
+        
+        if (endBox == null || endBox.trim().isEmpty()) {
+            return ActionResult.failure("滚动操作缺少end_box参数");
+        }
+        
+        Point startPoint = parseClickPoint(startBox);
+        if (startPoint == null) {
+            return ActionResult.failure("无法解析起始坐标: " + startBox);
+        }
+        
+        Point endPoint = parseClickPoint(endBox);
+        if (endPoint == null) {
+            return ActionResult.failure("无法解析结束坐标: " + endBox);
+        }
+        
+        SlidPoint slidPoint = new SlidPoint(startPoint, endPoint);
+        boolean success = gestureApi.scroll(slidPoint);
+        
+        if (success) {
+            return ActionResult.success("滚动操作执行成功: " + startPoint + " -> " + endPoint);
+        } else {
+            return ActionResult.failure("滚动操作执行失败");
+        }
+    }
+    
+
     
     /**
      * 执行完成操作

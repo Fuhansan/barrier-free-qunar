@@ -18,6 +18,11 @@ public class BroadcastConst {
         
         /** AI响应广播 - 用于通知AI响应完成 */
         public static final String AI_RESPONSE = "com.qunar.barrier_free_qunar.AI_RESPONSE";
+        
+        /** 输入控制广播 - 用于控制聊天输入框的启用/禁用状态 */
+        public static final String INPUT_CONTROL = "com.qunar.barrier_free_qunar.INPUT_CONTROL";
+        
+
     }
     
     /**
@@ -74,6 +79,11 @@ public class BroadcastConst {
         
         /** 多媒体数据 */
         public static final String MULTIMEDIA_DATA = "multimedia_data";
+
+        /** 广播的唯一key */
+        public static final String BROADCAST_PRIMARY_KEY = "target_receiver_id";
+        
+
     }
     
     /**
@@ -92,12 +102,6 @@ public class BroadcastConst {
         /** 系统消息 */
         public static final String SYSTEM = "system";
         
-        /** 用户输入消息 */
-        public static final String USER_INPUT = "user_input";
-        
-        /** AI响应完成消息 */
-        public static final String AI_RESPONSE_COMPLETE = "ai_response_complete";
-        
         /** 图片消息 */
         public static final String IMAGE = "image";
         
@@ -109,7 +113,12 @@ public class BroadcastConst {
         
         /** 多媒体混合消息 */
         public static final String MULTIMEDIA = "multimedia";
+
+        /** 控制UI消息 */
+        public static final String UI_CONTROL = "ui_control";
     }
+    
+
     
     /**
      * 发送者ID常量
@@ -148,4 +157,5 @@ public class BroadcastConst {
         /** 用户 */
         public static final String USER = "user";
     }
+
 }

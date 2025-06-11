@@ -4,6 +4,11 @@ import android.content.Context;
 import android.content.Intent;
 import android.util.Log;
 
+import com.qunar.barrier_free_qunar.java.sdk.model.broadcast.AIResponseData;
+import com.qunar.barrier_free_qunar.java.sdk.model.broadcast.MessageData;
+import com.qunar.barrier_free_qunar.java.sdk.model.broadcast.UserInputData;
+import com.qunar.barrier_free_qunar.java.sdk.consts.ReceiverConst;
+
 /**
  * 无障碍服务广播接收器
  * 专门处理无障碍服务相关的广播消息
@@ -15,6 +20,11 @@ public class AccessibilityBroadcastReceiver extends BaseBroadcastReceiver {
     
     public AccessibilityBroadcastReceiver(AccessibilityBroadcastListener listener) {
         this.listener = listener;
+    }
+    
+    @Override
+    protected String getReceiverId() {
+        return ReceiverConst.ACCESSIBILITY_SERVICE_RECEIVER;
     }
     
     @Override

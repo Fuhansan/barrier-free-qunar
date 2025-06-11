@@ -51,7 +51,7 @@ public class StreamEventParser {
         }
 
         try {
-            logCollector.d(TAG, "开始解析数据块: " + chunk + ", 当前状态: " + currentState);
+
 
             String trimmedChunk = chunk.trim();
             
@@ -91,12 +91,12 @@ public class StreamEventParser {
                 logCollector.i(TAG, "开始LLM流程，状态切换到WAITING_AGENT");
                 break;
             case MESSAGE:
-                if (currentState == ParseState.READY_TO_BROADCAST) {
+                if (currentState == ParseState.READY_TO_BROADCAST || currentState == ParseState.BROADCASTING) {
                     currentState = ParseState.BROADCASTING;
                     eventData.setShouldStartBroadcast(true);
                     logCollector.i(TAG, "开始消息广播，状态切换到BROADCASTING");
                 } else {
-                    logCollector.d(TAG, "接收到message事件，但状态不允许广播: " + currentState);
+                    logCollector.i(TAG, "接收到message事件，但状态不允许广播: " + currentState);
                 }
                 break;
                 
@@ -152,7 +152,7 @@ public class StreamEventParser {
 
                     logCollector.i(TAG, "检测到广播代理: " + agentName + "，状态切换到READY_TO_BROADCAST");
                 } else {
-                    logCollector.d(TAG, "检测到非广播代理: " + agentName);
+                    logCollector.i(TAG, "检测到非广播代理: " + agentName);
                 }
                 
             } else if (currentState == ParseState.BROADCASTING && jsonData.has("delta")) {
@@ -167,7 +167,6 @@ public class StreamEventParser {
                 if (delta.has("content")) {
                     String content = delta.getString("content");
                     eventData.setContent(content);
-                    logCollector.d(TAG, "解析到增量内容: " + content);
                 }
                 
             } else {
@@ -231,7 +230,7 @@ public class StreamEventParser {
             logCollector.d(TAG, "通用解析识别为AGENT_NAME事件");
         } else {
             eventData.setEventType(StreamEventData.EventType.UNKNOWN);
-            logCollector.d(TAG, "通用解析无法识别事件类型");
+            logCollector.d(TAG, "通用解析无法识别事件类型，jsonData：" + jsonData);
         }
         
         return eventData;
@@ -265,7 +264,7 @@ public class StreamEventParser {
         try {
             // 只对明确的JSON格式进行修复，避免处理普通文本内容
             if (!isLikelyJson(fixed)) {
-                logCollector.d(TAG, "内容不像JSON格式，跳过修复: " + fixed);
+                logCollector.d(TAG, "内容不像JSON格式，跳过修复: " + fixed + ", 数据类容：" + jsonString);
                 return jsonString;
             }
             
